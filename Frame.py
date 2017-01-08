@@ -2,6 +2,7 @@ import numpy as np
 import math
 import cmath
 import Constants as const
+import Wake as wake
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
@@ -152,8 +153,15 @@ class Frame(object):
         #self.pixels = np.array(
         #    [[self.pixel_val(i, j).real for j in range(self.num_pixels)] for i in range(self.num_pixels)]
         #)
+        
     
     def pixel_pos(self, i, j):
+        ''' Converts from pixel indices to angular coordinates
+
+        :param i: Pixel index along height of image
+        :param j: Pixel index along base of image
+        :return: Angular coordinates
+        '''
         pixel_width = self.size / self.num_pixels
         begin = np.array([
             self.phi - self.size/2 + pixel_width/2,
@@ -165,18 +173,35 @@ class Frame(object):
         ])
         index = np.array([i, j])
         
-        return np.sum([begin, np.dot(pixel, index)], axis=0)
+        return np.sum([begin, np.multiply(pixel, index)], axis=0)
     
-    def pixel_val(self, i, j):
-        sum = 0.
-        for k in range(self.num_pixels):
-            for l in range(self.num_pixels):
-                sum += self.modes[l][k] * cmath.exp(1j*2*const.pi/self.num_pixels * (i*k + j*l))
+    def add_strings(self, num_strings):
+        orientations = 2 * np.random.randint(2, size=num_strings) - 1
+        phis = const.pi * np.random.random(num_strings)
+        dists = (math.sqrt(2) + 1)/2 * self.size * (np.random.random(num_strings) - 0.5)
         
-        return sum / self.num_pixels**2
+        
+        for orientation, phi, dist in zip(orientations, phis, dists):
+            string = wake.SimpleWake(phi, dist, 80*uK, orientation)
+            
+            for i in range(self.num_pixels):
+                for j in range(self.num_pixels):
+                    relative_pos = self.pixel_pos(i, j) - np.array([self.phi, self.theta])
+                    rho = string.linear_coords(relative_pos[0], relative_pos[1])[1]
+                    
+                    self.pixels[i][j] += string.width(rho)
+    
+    #def pixel_val(self, i, j):
+    #    sum = 0.
+    #    for k in range(self.num_pixels):
+    #        for l in range(self.num_pixels):
+    #            sum += self.modes[l][k] * cmath.exp(1j*2*const.pi/self.num_pixels * (i*k + j*l))
+    #    
+    #    return sum / self.num_pixels**2
     
     def draw(self):
         plt.imshow(self.pixels,interpolation='none')
+        print self.pixels
         plt.show()
 
 

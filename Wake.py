@@ -1,6 +1,38 @@
+from __future__ import division
 import numpy as np
+import math
 import Constants as const
 
+class SimpleWake(object):
+    def __init__(self, phi, dist, tot_width, orientation):
+        self.phi = phi
+        self.dist = dist
+        self.tot_width = tot_width
+        self.span = 1.5*const.deg
+        
+        assert abs(orientation) == 1, "The attribute orientation must be +/- 1"
+        self.orientation = orientation
+    
+    def linear_coords(self, x, y):
+        # [rho, line] conversion
+        y_vec = np.array([-math.sin(self.phi), math.cos(self.phi)])
+        x_vec = np.array([math.cos(self.phi), math.sin(self.phi)])
+        
+        return y*y_vec + x*x_vec
+    
+    def width(self, rho):
+        # Measure the off dimension from the string itself rather than centre of image
+        rho = rho - self.dist
+        
+        if self.orientation * rho < 0:
+            return 0
+        
+        linear = self.span - self.orientation * rho
+        if linear < 0:
+            return 0
+        
+        return self.tot_width * (linear / self.span)
+    
 def gamma(v):
     # Reletivistic gamma factor for a velocity v
     return 1/np.sqrt(1 - (v)**2)
