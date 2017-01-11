@@ -176,13 +176,17 @@ class Frame(object):
         return np.sum([begin, np.multiply(pixel, index)], axis=0)
     
     def add_strings(self, num_strings):
+        if not num_strings:
+            return
+        
         orientations = 2 * np.random.randint(2, size=num_strings) - 1
         phis = const.pi * np.random.random(num_strings)
+        widths = np.random.normal(60*uK, 20*uK, num_strings)
         dists = (math.sqrt(2) + 1)/2 * self.size * (np.random.random(num_strings) - 0.5)
         
         
-        for orientation, phi, dist in zip(orientations, phis, dists):
-            string = wake.SimpleWake(phi, dist, 80*uK, orientation)
+        for orientation, phi, dist, width in zip(orientations, phis, dists, widths):
+            string = wake.SimpleWake(phi, dist, width, orientation)
             
             for i in range(self.num_pixels):
                 for j in range(self.num_pixels):
@@ -201,7 +205,6 @@ class Frame(object):
     
     def draw(self):
         plt.imshow(self.pixels,interpolation='none')
-        print self.pixels
         plt.show()
 
 
