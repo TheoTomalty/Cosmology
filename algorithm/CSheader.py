@@ -6,13 +6,13 @@ class GlobalFlags:
     Class that handles all of the algorithm global variables including:
         1) Run Directives: Which directories to use, train or test or output Tensorboard images, number of batches/files
         2) Tensorboard Directives: details of which images to show in Tensorboard
-        3) Fixed Parameters: Unchanging values specifying details of the SK detector geometry and algorithm hyper-parameters
+        3) Fixed Parameters: Unchanging values specifying algorithm hyper-parameters
         4) Variable Parameters: Algorithm hyper-parameters that can be changed according to desired functionality
         
         All Parameters can be set using a single-line JSON string parameter file (inserted to SKalgorithm.py call using the -p flag).
         The dictionary should have keys corresponding to parameter names to be overwritten, and their corresponding desired values.
         It is recommended to only overwrite Variable Parameters this way, and to specify all Directives (Tensorboard or otherwise)
-        using the c-style flags when calling SKalgorithm.py (use "python SKalgorithm.py -h" for a list of options).
+        using the c-style flags when calling CSalgorithm.py (use "python CSalgorithm.py -h" for a list of options).
         
         FIXED PARAMETERS SHOULD NOT BE CHANGED UNLESS TO MODIFY THE ARCHITECTURE OF THE ALGORITHM/DETECTOR/CONE
     '''
@@ -43,10 +43,10 @@ class GlobalFlags:
         self.average_decay_rate = 0.995 # Weight used for moving averages of network variables $avg_{i} = 0.995*avg_{i-1} + (1.0 - 0.995)*var_{i}$
         self.dropout_prob = 1.0 # Neurons in the fully connected layers are randomly deactivated with probability $1.0 - dropout_prob$
         self.batch_size = 50 # Number of images in a single batch (stochastic method of machine learning)
-        self.num_angles = 8 # Initial filters include one rigid edge and one smooth edge, num_angles indicates how many angles in a full circle to make edge filters for
+        self.num_angles = 10 # Initial filters include one rigid edge and one smooth edge, num_angles indicates how many angles in a full circle to make edge filters for
         self.num_zero_filters = 0 # Number of initial filters with zero weights in each pixel (can be used to give network more autonomy)
-        self.num_neuron_pairs = 7 # Number of pairs of neurons in each fully connected layer (pairs are used to make initial network setup simpler)
-        self.initial_learning_rate = 0.0004 # Step size used by tf.train.AdamOptimizer before decay (proportion of cost function gradient to step trainable variables)
+        self.num_neurons = 10 # Number neurons in each fully connected layer (pairs are used to make initial network setup simpler)
+        self.initial_learning_rate = 0.0000004 # Step size used by tf.train.AdamOptimizer before decay (proportion of cost function gradient to step trainable variables)
         self.decay_rate_per_thousand = 1/math.e # Ratio that learning rate (step size) is reduced in every 1000 batch interval
     
     def set_parameters(self, parameters):
@@ -110,25 +110,19 @@ def get_initial_filters(num_angles, num_zero_filters):
     :return: List of filters, number of filters
     '''
     
-    assert FLAGS.filter_size == 5, "If you change FLAGS.filter_size you must also change the initial filter sizes in SKheader.py"
+    assert FLAGS.filter_size == 5, "If you change FLAGS.filter_size you must also change the initial filter sizes in CSheader.py"
     filter_size = FLAGS.filter_size
     
     # First eval of number of filters (note that each angle will have one smooth edge and one rigid edge filter)
-    num_filters = 2*num_angles + num_zero_filters
+    num_filters = num_angles + num_zero_filters
     
     # Smooth vertical edge set to correspond with an electron ring
-    initial_el = [[-1., -1., 1., 0.5, 0.5],
+    initial_edge = [[-1., -1., 1., 0.5, 0.5],
                   [-1., -1., 1., 0.5, 0.5],
                   [-1., -1., 1., 0.5, 0.5],
                   [-1., -1., 1., 0.5, 0.5],
                   [-1., -1., 1., 0.5, 0.5]]
-    
-    # Rigid vertical edge set to correspond with a muon ring
-    initial_mu = [[-1., -1., 1., 0.5, 0.5],
-                  [-1., -1., 1., 0.5, 0.5],
-                  [-1., -1., 1., 0.5, 0.5],
-                  [-1., -1., 1., 0.5, 0.5],
-                  [-1., -1., 1., 0.5, 0.5]]
+
     
     initial_filters = []
     base_rotation = 2*math.pi/num_angles # Angle between each edge filter
@@ -138,8 +132,7 @@ def get_initial_filters(num_angles, num_zero_filters):
         filter_angle = angle_num * base_rotation
         
         # Setup filter_size x filter_size filter with None in each pixel
-        filter_el = [[None for x_0 in range(filter_size)] for y_0 in range(filter_size)]
-        filter_mu = [[None for x_0 in range(filter_size)] for y_0 in range(filter_size)]
+        filter_rot = [[None for x_0 in range(filter_size)] for y_0 in range(filter_size)]
         
         # Set each pixel weight in vertical filters to closest rotated conterpart
         for i in range(filter_size):
@@ -156,52 +149,33 @@ def get_initial_filters(num_angles, num_zero_filters):
                 j_rot = int(round(y_rot)) + 2
                 if (i_rot in range(filter_size) and j_rot in range(filter_size)):
                     # If pixel index is in range of the filter (i.e. not rotated outside filter) set rotated pixel to value of non-rotated pixel weight
-                    filter_el[j_rot][i_rot] = initial_el[j][i]
-                    filter_mu[j_rot][i_rot] = initial_mu[j][i]
+                    filter_rot[j_rot][i_rot] = initial_edge[j][i]
         
         # Search for pixels that were not touched using the above method and set their values to the average of nearby pixel weights.
         for i in range(filter_size):
             for j in range(filter_size):
                 # Check if pixel has None value which means it was not set using above method
-                if (filter_el[j][i] == None):
+                if (filter_rot[j][i] == None):
                     num = 0
                     sum = 0.
-                    if (j and filter_el[j-1][i] != None):
+                    if (j and filter_rot[j-1][i] != None):
                         # Add to average if pixel has j-1 neighbor and neighbor has value
                         num += 1
-                        sum += filter_el[j-1][i]
-                    if (i and filter_el[j][i-1] != None):
+                        sum += filter_rot[j-1][i]
+                    if (i and filter_rot[j][i-1] != None):
                         num += 1
-                        sum += filter_el[j][i-1]
-                    if (j < 4 and filter_el[j+1][i] != None):
+                        sum += filter_rot[j][i-1]
+                    if (j < 4 and filter_rot[j+1][i] != None):
                         num += 1
-                        sum += filter_el[j+1][i]
-                    if (i < 4 and filter_el[j][i+1] != None):
+                        sum += filter_rot[j+1][i]
+                    if (i < 4 and filter_rot[j][i+1] != None):
                         num += 1
-                        sum += filter_el[j][i+1]
+                        sum += filter_rot[j][i+1]
                     # Set the pixel weight to the average of the adjacent weights
-                    filter_el[j][i] = sum / num
-                # Do the same for the muon (rigid edge) filters
-                if (filter_mu[j][i] == None):
-                    num = 0
-                    sum = 0.
-                    if (j and filter_mu[j-1][i] != None):
-                        num += 1
-                        sum += filter_mu[j-1][i]
-                    if (i and filter_mu[j][i-1] != None):
-                        num += 1
-                        sum += filter_mu[j][i-1]
-                    if (j < 4 and filter_mu[j+1][i] != None):
-                        num += 1
-                        sum += filter_mu[j+1][i]
-                    if (i < 4 and filter_mu[j][i+1] != None):
-                        num += 1
-                        sum += filter_mu[j][i+1]
-                    filter_mu[j][i] = sum / num
+                    filter_rot[j][i] = sum / num
         
         # Attach both, complete, filters to the list of filters that will later be returned by this function
-        initial_filters.append(filter_el)
-        initial_filters.append(filter_mu)
+        initial_filters.append(filter_rot)
 
         
     # Return complete list of filters with total number that were used

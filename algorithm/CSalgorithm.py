@@ -124,8 +124,8 @@ def train():
         #Iterate over the desired number of batches
         for batch_num in range(1, FLAGS.num_iterations + 1):
             #Run the training step once and return real-number values for cost and accuracy
-            _, cost_value, acc_value, label_val, logit_val = sess.run([train_op, cost, accuracy, labels, logits])
-            #print label_val, logit_val
+            _, cost_value, acc_value, fh_pool1, fh_pool2 = sess.run([train_op, cost, accuracy, logits, labels])
+            print fh_pool1, fh_pool2
             
             assert not math.isnan(cost_value), 'Model diverged with cost = NaN'
             tracker.add([cost_value, acc_value])

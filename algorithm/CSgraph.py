@@ -3,6 +3,9 @@ import CSheader as h
 
 FLAGS = h.FLAGS
 
+#TODO: Try only using the same filters on the second convolution, rather than allowing mixing (reduce learnable variables)
+#TODO: Investigate possibility that cost function tends towards single bias
+
 class Tracker(object):
     ''' Simple class to keep track of value averages during training.
         Use tracker.add() to input values in each batch and print_average
@@ -62,6 +65,9 @@ class Tracker(object):
             self.numerator[index] += float(var)
         self.denominator += 1
 
+def element(value, index, size):
+    return [value if index == j else 0. for j in range(size)]
+
 def inference(images, keep_prob):
     ''' Inference Mask that contains the bulk of the CNN network definitions.
         
@@ -79,47 +85,68 @@ def inference(images, keep_prob):
         #Initial filters include straight/smooth edges of different angles and a few arbitrary shapes
         initial_filters, num_filters = h.get_initial_filters(FLAGS.num_angles, FLAGS.num_zero_filters)
         
-        #First and only convolution Layer
-        W_conv1 = tf.Variable(tf.transpose(tf.reshape(tf.constant(initial_filters), [num_filters, FLAGS.filter_size, FLAGS.filter_size, 1]), [1, 2, 3, 0]))
-        b_conv1 = tf.Variable(tf.zeros([num_filters]))
+        #First convolution layer, searches for physical edge in image
+        convolution_weights_1 = tf.Variable(
+            tf.transpose(
+                tf.reshape(
+                    tf.constant(initial_filters),
+                    [num_filters, FLAGS.filter_size, FLAGS.filter_size, 1]
+                ),
+                [1, 2, 3, 0]
+            )
+        )
+        #convolution_bias_1 = tf.Variable(
+        #    tf.zeros([num_filters])
+        #)
         
-        #Fully connected layer takes input from 10x10 pixel feature maps (after pooling)
-        layer_shape = [10*10*(num_filters), 2*FLAGS.num_neuron_pairs]
-        bias_shape = [2*FLAGS.num_neuron_pairs]
-        W_fc1 = tf.Variable(tf.zeros(layer_shape))
-        b_fc1 = tf.Variable(tf.zeros(bias_shape))
+        h_conv1 = tf.nn.relu(h.conv2d(images, convolution_weights_1))
+        h_pool1 = tf.nn.max_pool(h_conv1, ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID')
         
-        #Second fully connected layer initialized to 1-1 mapping from first layer.
-        W_fc2_initial = [[(0. if not neur2 == neur1 else (1.)) for neur2 in range(2*FLAGS.num_neuron_pairs)] for neur1 in range(2*FLAGS.num_neuron_pairs)]
-        W_fc2 = tf.Variable(W_fc2_initial)
-        b_fc2 = tf.Variable(tf.zeros(bias_shape))
+        #Second convolution layer, treat each output map like pixel colours
+        weight_array = []
+        for filter, filter_num in zip(initial_filters, range(num_filters)):
+            extend_filter = [[element(filter[i][j], filter_num, num_filters) for j in range(FLAGS.filter_size)] for i in range(FLAGS.filter_size)]
+            weight_array += [extend_filter]
+        
+        convolution_weights_2 = tf.Variable(
+            tf.transpose(weight_array, [1, 2, 3, 0])
+        )
+        #convolution_bias_2 = tf.Variable(
+        #    tf.zeros([num_filters])
+        #)
+        
+        output_data = 4*4*num_filters
+        h_conv2 = tf.nn.relu(h.conv2d(h_pool1, convolution_weights_2))
+        h_pool2 = tf.nn.max_pool(h_conv2, ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID')
+        h_pool_flat = tf.reshape(h_pool2, [-1, output_data])
+        
+        #Fully connected layer takes input from 5x5 pixel feature maps (after pooling)
+        layer_shape = [output_data, FLAGS.num_neurons]
+        bias_shape = [FLAGS.num_neurons]
+        fully_connected_weights_1 = tf.Variable(tf.ones(layer_shape))
+        #fully_connected_bias_1 = tf.Variable(tf.zeros(bias_shape))
+        
+        h_fc1 = tf.matmul(h_pool_flat, fully_connected_weights_1)
+        h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)
+        
+        ##Second fully connected layer initialized to 1-1 mapping from first layer.
+        #fully_connected_weights_2 = tf.Variable(
+        #    [
+        #        [(1. if neuron2 == neuron1 else (0.)) for neuron2 in range(FLAGS.num_neurons)]
+        #        for neuron1 in range(FLAGS.num_neurons)
+        #    ]
+        #)
+        #fully_connected_bias_2 = tf.Variable(tf.zeros(bias_shape))
+        #
+        #h_fc2 = tf.matmul(h_fc1_drop, fully_connected_weights_2) + fully_connected_bias_2
+        #h_fc2_drop = tf.nn.dropout(h_fc2, keep_prob)
         
         #Output layer initialized so that alternating neurons map to electron output and muon output.
-        neurons = []
-        for pair in range(FLAGS.num_neuron_pairs):
-          neurons += [[1., 0.], [1., 0.]]
-        W_fc3 = tf.Variable(neurons)
-
-    #Convolution, Pooling, and flattening feature maps into 1D input list for each image
-    h_conv1 = tf.nn.relu(h.conv2d(images, W_conv1) + b_conv1)
-    h_pool1 = tf.nn.avg_pool(h_conv1, ksize=[1, 10, 10, 1], strides=[1, 10, 10, 1], padding='VALID')
-    h_pool_flat = tf.reshape(h_pool1, [-1, 10*10*(num_filters)])
-    #h_pool_flat = tf.reduce_max(h_conv1, reduction_indices=[1, 2])
-    
-    #First Connected Layer with possible dropout if keep_prob < 1.0
-    h_fc1 = tf.matmul(h_pool_flat, W_fc1) + b_fc1
-    h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)
-    
-    
-    #Second Connected Layer with possible dropout if keep_prob < 1.0
-    h_fc2 = tf.matmul(h_fc1_drop, W_fc2) + b_fc2
-    h_fc2_drop = tf.nn.dropout(h_fc2, keep_prob)
-    
-    
-    #Softmax transormation of semi-linear 2-channel output
-    output = tf.nn.softmax(tf.matmul(h_fc2_drop, W_fc3))
-    
-    return output
+        full_connected_output_weights = tf.Variable(
+            [[0., 0.]]*FLAGS.num_neurons
+        )
+        
+        return tf.nn.softmax(tf.matmul(h_fc1_drop, full_connected_output_weights))
 
 def cost(logits, labels):
     ''' Cost function to be minimized during network training.
