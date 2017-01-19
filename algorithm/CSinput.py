@@ -204,8 +204,8 @@ def input_pipeline(files, size, num_epochs=None, shuffle=True):
 def get_files(name, extension="txt"):
     '''
     Easy Generation of the list of files to use in the algorithm.
-    Assumes Setup.py format with a FLAGS.image_directory containing 
-    files in the format "name1.txt", "name2.txt" etc.
+    Assumes format where the FLAGS.image_directory containing 
+    files called "name1.txt", "name2.txt" etc.
     
     :param name: A string representing the prefix of the files in a given directory (ex. 'info' for "info1.txt", "info2.txt", etc.)
     :param extension: Optional extension if not a plain text file
@@ -224,8 +224,7 @@ def get_files(name, extension="txt"):
         else:
             # End of Loop
             file_num = 0
-        
-        
+    
     return file_names
 
 def input(shuffle=True):
@@ -244,7 +243,7 @@ def input(shuffle=True):
     
     return images, labels
 
-def get_summary_filter(labels, correct):
+def get_summary_filter(labels, correct, show_worked=True, show_strings=True, show_unstringed=True):
     '''
     Reduce a batch of images to a list of images that will be added to the Tensorboard visual output.
     Filter the images based on string existence and whether or not the algorithm worked on it.
@@ -259,7 +258,7 @@ def get_summary_filter(labels, correct):
     size = int(correct.get_shape()[0])
     assert int(labels.get_shape()[0]) == size
     
-    if FLAGS.show_worked:
+    if show_worked:
         #Show images where the algorithm worked *in addition* to the ones that didn't (i.e. do not apply a cut here)
         right_worked = tf.constant(True, dtype=tf.bool, shape=[size])
     else:
@@ -267,7 +266,7 @@ def get_summary_filter(labels, correct):
         right_worked = tf.logical_not(correct)
     
     #Construct a boolean mask that shows electrons if $FLAGS.show_electrons and shows muons if $FLAGS.show_muons
-    show_strings = tf.tile(tf.constant([[FLAGS.show_strings, FLAGS.show_unstringed]], dtype=tf.bool), [size, 1])
+    show_strings = tf.tile(tf.constant([[show_strings, show_unstringed]], dtype=tf.bool), [size, 1])
     good_strings = tf.logical_and(show_strings, tf.cast(labels, tf.bool))
     right_strings = tf.logical_or(tf.reshape(tf.slice(good_strings, [0,0], [size, 1]), [size]), tf.reshape(tf.slice(good_strings, [0,1], [size, 1]), [size]))
     
@@ -280,7 +279,7 @@ def mask(images, show):
 
 def get_summary(images):
     #Construct the summary object that sends the images tensor to Tensorboard for display (displays a maximum of $max_images images)
-    return tf.image_summary("data", images, max_images=FLAGS.num_iterations)
+    return tf.summary.image("data", images, max_outputs=20)
     
 def write(session, summary):
     # Function to save images in an image summary (from get_summary) to Tensorboard log files
@@ -295,34 +294,5 @@ def write(session, summary):
         else:
             print "Unexpected file in logdir: " + f
     # Write summary object
-    writer = tf.train.SummaryWriter(logdir, session.graph)
+    writer = tf.summary.FileWriter(logdir, session.graph)
     writer.add_summary(session.run(summary), 0)
-    
-def combine_info_files(complete_info_file, temp_info_file):
-    # Combines the dictionary lists from two separate files, complete_info_file and temp_info_file
-    
-    # Create new file that will hold the final result
-    combine_info_file = os.path.join(FLAGS.run_directory, "combine_info.txt")
-    #Open all three files
-    with  open(complete_info_file, "r") as complete_info:
-        with open(temp_info_file, "r") as temp_info:
-            with open(combine_info_file, "w") as combine_info:
-                # Loop over the lines of the two files that will be combined 
-                # (recall that each line is a single JSON string representing a python dictionary)
-                for line1, line2 in zip(complete_info, temp_info):
-                    #Load the strings into dictionaries
-                    info1 = json.loads(line1[:-1])
-                    info2 = json.loads(line2[:-1])
-                    #Combine the dictionaries key-by-key
-                    for key in info2:
-                        #if key in info1:
-                        #    assert info1[key] == info2[key], "Error: Shared dictionary elements in " + complete_info_file + " and " + temp_info_file + " do not match."
-                        info1[key] = info2[key]
-                    #Write the combined dictionary to the output file
-                    combine_info.write(json.dumps(info1) + "\n")
-    
-    #Remove the original file and temp file
-    remove(temp_info_file)
-    remove(complete_info_file)
-    #Set the output file name to that of the original file
-    move(combine_info_file, complete_info_file)

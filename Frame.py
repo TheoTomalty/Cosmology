@@ -181,8 +181,8 @@ class Frame(object):
         
         orientations = 2 * np.random.randint(2, size=num_strings) - 1
         phis = const.pi * np.random.random(num_strings)
-        widths = np.random.normal(60*uK, 20*uK, num_strings)
-        dists = (math.sqrt(2) + 1)/2 * self.size * (np.random.random(num_strings) - 0.5)
+        widths = np.random.normal(5*uK, 1.5*uK, num_strings)
+        dists = self.size * (np.random.random(num_strings) - 0.5)
         
         
         for orientation, phi, dist, width in zip(orientations, phis, dists, widths):

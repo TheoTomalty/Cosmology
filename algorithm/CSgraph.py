@@ -3,8 +3,9 @@ import CSheader as h
 
 FLAGS = h.FLAGS
 
-#TODO: Try only using the same filters on the second convolution, rather than allowing mixing (reduce learnable variables)
-#TODO: Investigate possibility that cost function tends towards single bias
+#TODO: Make output of network function more intuitive
+#TODO: Integrate the actual labels to the loss function
+#TODO: Normalize filters
 
 class Tracker(object):
     ''' Simple class to keep track of value averages during training.
@@ -65,25 +66,21 @@ class Tracker(object):
             self.numerator[index] += float(var)
         self.denominator += 1
 
-def element(value, index, size):
-    return [value if index == j else 0. for j in range(size)]
-
-def inference(images, keep_prob):
+def network(images):
     ''' Inference Mask that contains the bulk of the CNN network definitions.
         
         Converts images and associated information into the 2-channel classification
         prediction for the network.
         
-    :param images: Tensor containing FLAGS.get_batch_size() images of size FLAGS.num_pixels**2
-    :param keep_prob: Probability of dropout for the neurons
-    :return: Softmax output of only the images
+    :param images: Tensor containing FLAG=.get_batch_size() images of size FLAGS.num_pixels**2
+    :return: Network output of the images
     '''
     
     with tf.variable_scope('vars'):
         #Initialize all the Variables in this network
         
         #Initial filters include straight/smooth edges of different angles and a few arbitrary shapes
-        initial_filters, num_filters = h.get_initial_filters(FLAGS.num_angles, FLAGS.num_zero_filters)
+        initial_filters, num_filters = h.get_initial_filters(FLAGS.num_angles)
         
         #First convolution layer, searches for physical edge in image
         convolution_weights_1 = tf.Variable(
@@ -95,68 +92,63 @@ def inference(images, keep_prob):
                 [1, 2, 3, 0]
             )
         )
-        #convolution_bias_1 = tf.Variable(
-        #    tf.zeros([num_filters])
-        #)
         
-        h_conv1 = tf.nn.relu(h.conv2d(images, convolution_weights_1))
-        h_pool1 = tf.nn.max_pool(h_conv1, ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID')
+        h_conv1 = h.conv2d(images, convolution_weights_1)
+        h_pool1 = tf.nn.avg_pool(h_conv1, ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID')
         
-        #Second convolution layer, treat each output map like pixel colours
-        weight_array = []
-        for filter, filter_num in zip(initial_filters, range(num_filters)):
-            extend_filter = [[element(filter[i][j], filter_num, num_filters) for j in range(FLAGS.filter_size)] for i in range(FLAGS.filter_size)]
-            weight_array += [extend_filter]
+        # Second convolution layer using same filters as first layer (no new variables)
+        unpack = tf.unpack(convolution_weights_1, axis=3)
+        padding = [
+            tf.pad(
+                filter,
+                [[0, 0], [0, 0], [filter_num, num_filters - (filter_num + 1)]])
+            for filter, filter_num in zip(unpack, range(num_filters))
+        ]
+        convolution_weights_2 = tf.pack(padding, axis=2)
         
-        convolution_weights_2 = tf.Variable(
-            tf.transpose(weight_array, [1, 2, 3, 0])
-        )
-        #convolution_bias_2 = tf.Variable(
-        #    tf.zeros([num_filters])
-        #)
+        h_conv2 = h.conv2d(h_pool1, convolution_weights_2)
+        h_pool2 = tf.nn.avg_pool(h_conv2, ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID')
         
-        output_data = 4*4*num_filters
-        h_conv2 = tf.nn.relu(h.conv2d(h_pool1, convolution_weights_2))
-        h_pool2 = tf.nn.max_pool(h_conv2, ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID')
-        h_pool_flat = tf.reshape(h_pool2, [-1, output_data])
-        
-        #Fully connected layer takes input from 5x5 pixel feature maps (after pooling)
-        layer_shape = [output_data, FLAGS.num_neurons]
-        bias_shape = [FLAGS.num_neurons]
-        fully_connected_weights_1 = tf.Variable(tf.ones(layer_shape))
-        #fully_connected_bias_1 = tf.Variable(tf.zeros(bias_shape))
-        
-        h_fc1 = tf.matmul(h_pool_flat, fully_connected_weights_1)
-        h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)
-        
-        ##Second fully connected layer initialized to 1-1 mapping from first layer.
-        #fully_connected_weights_2 = tf.Variable(
-        #    [
-        #        [(1. if neuron2 == neuron1 else (0.)) for neuron2 in range(FLAGS.num_neurons)]
-        #        for neuron1 in range(FLAGS.num_neurons)
-        #    ]
-        #)
-        #fully_connected_bias_2 = tf.Variable(tf.zeros(bias_shape))
-        #
-        #h_fc2 = tf.matmul(h_fc1_drop, fully_connected_weights_2) + fully_connected_bias_2
-        #h_fc2_drop = tf.nn.dropout(h_fc2, keep_prob)
-        
-        #Output layer initialized so that alternating neurons map to electron output and muon output.
-        full_connected_output_weights = tf.Variable(
-            [[0., 0.]]*FLAGS.num_neurons
+        # Compute scalar output
+        sum_average = tf.reduce_sum(
+            tf.reduce_mean(
+                tf.abs(h_pool2),
+                reduction_indices=[2, 3]
+            ), 1
         )
         
-        return tf.nn.softmax(tf.matmul(h_fc1_drop, full_connected_output_weights))
+        # Separate data according to scalar deviation from mean
+        compare_scale = tf.reduce_mean(sum_average, keep_dims=True)
+        print sum_average, compare_scale, tf.tile(compare_scale, [FLAGS.get_batch_size()])
+        
+        compare = tf.pack(
+            [tf.tile(compare_scale, [FLAGS.get_batch_size()]), sum_average],
+            axis = 1
+        )
+        
+        return compare
 
-def cost(logits, labels):
-    ''' Cost function to be minimized during network training.
+def cost(compare, labels):
+    ''' Cost function to be minimized during network training. Expect a bimodal distribution so
+        desire to minimize the peak width to peak separation ratio.
     
-    :param logits: Softmax output from inference() function.
-    :param labels: Tensor containing [1, 0] label for electron and [0, 1] label for muons 
-    :return: Simple squared L2 norm of the 2D vector difference between logits and labels
+    :param compare: Network mean versus scalar output from network() function
+    :param labels: Tensor containing [1, 0] label for nostring and [0, 1] label for string 
+    :return: Characterization of bimodal distribution
     '''
     
-    return tf.reduce_mean(tf.reduce_sum((labels - logits)*(labels - logits), reduction_indices=[1]))
+    single_modal =  tf.abs(
+        tf.subtract(
+            *tf.unpack(compare, axis=1)
+        )
+    )
+    
+    half_separation = tf.reduce_mean(single_modal)
+    half_width = tf.sqrt(tf.reduce_mean(tf.square(
+        single_modal - half_separation
+    )))
+    
+    return tf.divide(half_width, half_separation)
 
 def train(cost, saver, global_step):
     ''' Group elements together into an object that will perform training steps when called with sess.run(...)
@@ -180,23 +172,23 @@ def train(cost, saver, global_step):
     
     return training_op
 
-def correct(logits, labels):
+def correct(compare, labels):
     ''' Checking if the networks have made the correct classifications
     
-    :param logits: Tensor of Network predictions from inference(...)
+    :param compare: Network mean versus scalar output from network() function
     :param labels: Tensor of True classifications in [1, 0] or [0, 1] format
     :return: Tensor of type tf.bool with True if the correct classification was made and False otherwise
     '''
     
-    return tf.equal(tf.argmax(logits,1), tf.argmax(labels,1))
+    return tf.equal(tf.argmax(compare,1), tf.argmax(labels,1))
 
-def accuracy(logits, labels):
+def accuracy(compare, labels):
     ''' Calculate the accuracy of the Network in a sample batch
     
-    :param logits: Tensor of Network predictions from inference(...)
+    :param logits: Network mean versus scalar output from network() function
     :param labels: Tensor of True classifications in [1, 0] or [0, 1] format
     :return: Tensor value of type tf.float representing (#correct predictions)/(#predictions)
     '''
         
-    return tf.reduce_mean(tf.cast(correct(logits, labels), tf.float32))
+    return tf.reduce_mean(tf.cast(correct(compare, labels), tf.float32))
 
