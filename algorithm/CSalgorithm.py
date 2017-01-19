@@ -79,15 +79,15 @@ def process():
         images, labels = CSinput.input(shuffle=FLAGS.training)
         
         #Get output of the CNN with images as input
-        compare = CSgraph.network(images)
+        scalar = CSgraph.network(images)
         
         #Initialize saver object that takes care of reading and writing parameters to checkpoint files
         saver = CSinput.Saver()
         
         #Values and Operations to evaluate in each batch
-        cost = CSgraph.cost(compare, labels)
-        correct = CSgraph.correct(compare, labels)
-        accuracy = CSgraph.accuracy(compare, labels)
+        cost = CSgraph.cost(scalar, labels)
+        correct = CSgraph.correct(CSgraph.prediction(scalar), labels)
+        accuracy = CSgraph.accuracy(correct)
         train_op = CSgraph.train(cost, saver, global_step)
         
         #Initialize all the Tensorflow Variables defined in appropriate networks, as well as the Tensorflow session object
@@ -114,7 +114,7 @@ def process():
             # Iterate over the desired number of batches
             for batch_num in range(1, FLAGS.num_iterations + 1):
                 #Run the training step once and return real-number values for cost and accuracy
-                _, cost_value, acc_value, compare_val = sess.run([train_op, cost, accuracy, compare])
+                _, cost_value, acc_value, scalar_val = sess.run([train_op, cost, accuracy, scalar])
                 
                 assert not math.isnan(cost_value), 'Model diverged with cost = NaN'
                 tracker.add([cost_value, acc_value])

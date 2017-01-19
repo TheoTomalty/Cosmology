@@ -3,9 +3,8 @@ import CSheader as h
 
 FLAGS = h.FLAGS
 
-#TODO: Make output of network function more intuitive
-#TODO: Integrate the actual labels to the loss function
 #TODO: Normalize filters
+#TODO: Add neighbouring angles in second convolution (useful for curved strings)
 
 class Tracker(object):
     ''' Simple class to keep track of value averages during training.
@@ -110,45 +109,48 @@ def network(images):
         h_pool2 = tf.nn.avg_pool(h_conv2, ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID')
         
         # Compute scalar output
-        sum_average = tf.reduce_sum(
+        scalar = tf.reduce_sum(
             tf.reduce_mean(
                 tf.abs(h_pool2),
                 reduction_indices=[2, 3]
             ), 1
         )
         
-        # Separate data according to scalar deviation from mean
-        compare_scale = tf.reduce_mean(sum_average, keep_dims=True)
-        print sum_average, compare_scale, tf.tile(compare_scale, [FLAGS.get_batch_size()])
-        
-        compare = tf.pack(
-            [tf.tile(compare_scale, [FLAGS.get_batch_size()]), sum_average],
-            axis = 1
-        )
-        
-        return compare
+        return scalar
 
-def cost(compare, labels):
+def cost(scalar, labels):
     ''' Cost function to be minimized during network training. Expect a bimodal distribution so
         desire to minimize the peak width to peak separation ratio.
     
-    :param compare: Network mean versus scalar output from network() function
-    :param labels: Tensor containing [1, 0] label for nostring and [0, 1] label for string 
+    :param scalar: Network output from the network() function
+    :param label: Tensor of True classifications in True or False format
     :return: Characterization of bimodal distribution
     '''
     
-    single_modal =  tf.abs(
-        tf.subtract(
-            *tf.unpack(compare, axis=1)
-        )
+    # Separate the scalars into individual distributions based on the corresponding labels
+    string_distribution = tf.boolean_mask(
+        scalar,
+        labels
+    )
+    noise_distribution = tf.boolean_mask(
+        scalar,
+        tf.logical_not(tf.cast(labels, tf.bool))
     )
     
-    half_separation = tf.reduce_mean(single_modal)
-    half_width = tf.sqrt(tf.reduce_mean(tf.square(
-        single_modal - half_separation
+    # Compute the average and rms of distributions
+    string_avg = tf.reduce_mean(string_distribution)
+    string_rms = tf.sqrt(tf.reduce_mean(tf.square(
+        string_distribution - string_avg
     )))
     
-    return tf.divide(half_width, half_separation)
+    noise_avg = tf.reduce_mean(noise_distribution)
+    noise_rms = tf.sqrt(tf.reduce_mean(tf.square(
+        noise_distribution - noise_avg
+    )))
+    
+    separation = tf.abs(string_avg - noise_avg)
+    
+    return tf.add(tf.divide(string_rms, separation), tf.divide(noise_rms, separation))
 
 def train(cost, saver, global_step):
     ''' Group elements together into an object that will perform training steps when called with sess.run(...)
@@ -172,23 +174,33 @@ def train(cost, saver, global_step):
     
     return training_op
 
-def correct(compare, labels):
+def prediction(scalar):
+    # Converts the Network output tensor from network() to a prediction in 1hot format
+    average = tf.reduce_mean(scalar, keep_dims=True)
+    
+    compare = tf.pack(
+        [tf.tile(average, [FLAGS.get_batch_size()]), scalar],
+        axis = 1
+    )
+    
+    return tf.cast(tf.argmax(compare,1), tf.bool)
+
+def correct(prediction, label):
     ''' Checking if the networks have made the correct classifications
     
-    :param compare: Network mean versus scalar output from network() function
-    :param labels: Tensor of True classifications in [1, 0] or [0, 1] format
+    :param scalar: Network output from the network() function
+    :param label: Tensor of True classifications in True or False format
     :return: Tensor of type tf.bool with True if the correct classification was made and False otherwise
     '''
     
-    return tf.equal(tf.argmax(compare,1), tf.argmax(labels,1))
+    return tf.equal(prediction, label)
 
-def accuracy(compare, labels):
+def accuracy(correct):
     ''' Calculate the accuracy of the Network in a sample batch
     
-    :param logits: Network mean versus scalar output from network() function
-    :param labels: Tensor of True classifications in [1, 0] or [0, 1] format
+    :param correct: Tensor with Truth when the algorithm was right, and False when the algorithm was wrong
     :return: Tensor value of type tf.float representing (#correct predictions)/(#predictions)
     '''
         
-    return tf.reduce_mean(tf.cast(correct(compare, labels), tf.float32))
+    return tf.reduce_mean(tf.cast(correct, tf.float32))
 

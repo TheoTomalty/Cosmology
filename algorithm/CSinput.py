@@ -239,9 +239,9 @@ def input(shuffle=True):
     # while there is a fourth dimension with a length of '1' to indicate that we are dealing with a black-and-white image rather than a
     # 3-channel colour image.
     images = tf.reshape(pipeline[0], [-1, FLAGS.num_pixels, FLAGS.num_pixels, 1])
-    labels = pipeline[1]
+    _, indicator = tf.unstack(pipeline[1], axis=1)
     
-    return images, labels
+    return images, tf.cast(indicator, tf.bool)
 
 def get_summary_filter(labels, correct, show_worked=True, show_strings=True, show_unstringed=True):
     '''
