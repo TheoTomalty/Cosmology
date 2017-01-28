@@ -9,6 +9,7 @@ import matplotlib.cm as cm
 #TODO: Use better approximation for the spectrum
 #TODO: Implement approximation to spin-weighted spherical harmonics
 #TODO: Add instrumental noise
+#TODO: Make code great again
 
 uK = const.uK
 
