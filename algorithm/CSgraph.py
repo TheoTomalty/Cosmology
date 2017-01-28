@@ -123,7 +123,7 @@ def cost(scalar, labels):
         desire to minimize the peak width to peak separation ratio.
     
     :param scalar: Network output from the network() function
-    :param label: Tensor of True classifications in True or False format
+    :param label: Tensor of True classifications in True or False format 
     :return: Characterization of bimodal distribution
     '''
     

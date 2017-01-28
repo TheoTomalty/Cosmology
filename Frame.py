@@ -82,10 +82,10 @@ class CMB(object):
         self.B = np.zeros([10], dtype=float) #np.zeros([(self.l_max + 1)**2], dtype=float)
 
         self.C_EE = Spectrum(
-            [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1100, 4*uK), (3000, 1*uK), (6000, 0.05*uK)]
+            [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1100, 4*uK), (3000, 1*uK), (4000, 0.000000000000000000000001*uK), (200000, 0.000000000000000000000001*uK)]
         )
-        self.C_BB = Spectrum(
-            [(2, 0.035*uK), (8, 0.02*uK), (800, 0.5*uK), (1500, 0.5*uK), (3000, 0.2*uK), (6000, 0.01*uK)]
+        self.C_TT = Spectrum(
+            [(2, 30*uK), (30, 30*uK), (100, 70*uK), (700, 40*uK), (3000, 5*uK), (20000, 0.1*uK)]
         )
     
     def index(self, l, m):
@@ -137,7 +137,7 @@ class Frame(object):
         
         self.cmb = CMB(size/num_pixels)
         self.sigma = np.array(
-            [[0 if k == l == 0 else self.cmb.C_EE.eval(const.pi*self.num_pixels/np.sqrt(k**2 + l**2)/self.size) for k in range(self.num_pixels)] for l in range(self.num_pixels)]
+            [[0 if k == l == 0 else self.cmb.C_TT.eval(np.sqrt(k**2 + l**2)*math.pi/self.size) for k in range(self.num_pixels)] for l in range(self.num_pixels)]
         )
         self.modes = np.multiply(
             np.reshape(
@@ -150,7 +150,7 @@ class Frame(object):
             ),
             self.sigma
         )
-        self.pixels = np.fft.fft2(self.modes).real
+        self.pixels = np.fft.ifft2(self.modes).real
         #self.pixels = np.array(
         #    [[self.pixel_val(i, j).real for j in range(self.num_pixels)] for i in range(self.num_pixels)]
         #)
@@ -195,14 +195,6 @@ class Frame(object):
                     rho = string.linear_coords(relative_pos[0], relative_pos[1])[1]
                     
                     self.pixels[i][j] += string.width(rho)
-    
-    #def pixel_val(self, i, j):
-    #    sum = 0.
-    #    for k in range(self.num_pixels):
-    #        for l in range(self.num_pixels):
-    #            sum += self.modes[l][k] * cmath.exp(1j*2*const.pi/self.num_pixels * (i*k + j*l))
-    #    
-    #    return sum / self.num_pixels**2
     
     def draw(self):
         plt.imshow(self.pixels,interpolation='none')
