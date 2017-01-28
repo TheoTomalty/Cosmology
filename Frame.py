@@ -1,3 +1,4 @@
+from __future__ import division
 import numpy as np
 import math
 import cmath
@@ -9,13 +10,33 @@ import matplotlib.cm as cm
 #TODO: Use better approximation for the spectrum
 #TODO: Implement approximation to spin-weighted spherical harmonics
 #TODO: Add instrumental noise
-#TODO: Make code great again
 
 uK = const.uK
 
+def square_complex(size):
+    return np.array([[0 + 0j]*size]*size)
+
+def square_mode(i, j, total):
+    magnitude = max(i, j)
+    return magnitude, 2*magnitude + 1
+
+def angled_mode(i, j, total):
+    radius = np.sqrt(i**2 + j**2)
+    
+    if radius < total:
+        return radius, math.pi/2 * radius
+    
+    intersect_angle = np.arccos(total/radius)
+    angular_span = 2*(math.pi/4 - intersect_angle)
+    
+    if angular_span > 0:
+        return radius, angular_span * radius
+    
+    return radius, 1
+
 class Spectrum(object):
     def __init__(self, nodes=()):
-        ''' Simple class to set up a peacewise liner spectrum in log-log space.
+        ''' Simple class to set up a piecewise liner spectrum in log-log space.
         
         # Define the spectrum
         >>> spec = Spectrum()
@@ -24,13 +45,9 @@ class Spectrum(object):
         >>> spec.append(10, 3)
         >>> spec.append(100, 5)
         >>> spec.append(50, 4)
-        >>> print spec.nodes
-        [(10.0, 3.0), (50.0, 4.0), (100.0, 5.0)]
         
         # Evaluate Spectrum
         >>> eval = [spec.eval(x) for x in range(20, 80, 10)]
-        >>> print eval
-        [3.3957009783920302, 3.650944325203774, 3.8435950448841982, 4.0, 4.241804602764226, 4.457616594046425]
         '''
         self.nodes = []
         
@@ -48,13 +65,20 @@ class Spectrum(object):
         self.nodes.append((float(x), float(y)))
         self.sort()
         
-    def eval(self, x):
-        x = float(x)
-        assert len(self.nodes) > 1, "Not enough nodes in spectrum"
-        assert self.nodes[0][0] <= x < self.nodes[-1][0], "Out of bounds"
+    def delta_T(self, l):
+        ''' Evaluate the power per log interval of wave number $\Delta_T^2 = \frac{l(l+1)C_l}{2\pi}$
+        
+        :param l: Spherical harmonic number
+        :return: Power of modes per log interval in wave number
+        '''
+        l = float(l)
+        assert len(self.nodes) > 0, "No nodes in spectrum"
+        
+        if l < self.nodes[0][0]:
+            return self.nodes[0][1]
         
         for node in self.nodes:
-            if x > node[0]:
+            if l > node[0]:
                 continue
             
             end = node
@@ -65,59 +89,15 @@ class Spectrum(object):
                 math.log(float(start[1]) / float(end[1])) /
                 math.log(float(start[0]) / float(end[0]))
             )
-            return start[1] * (x/start[0])**alpha
-
-class CMB(object):
-    def __init__(self, resolution):
-        ''' Generate and save all the gaussian distributed polarization variables.
+            return start[1] * (l/start[0])**alpha
         
-        :param resolution: Resolution of the intended image, to set max on the computed wavenumbers
-        
-        #>>> cmb = CMB(0.01)
-        #>>> cmb.generate()
-        '''
-        self.l_max = int(const.pi/resolution)
-        
-        # Elements arranged in single array ordered first by l then by m
-        self.E = np.zeros([10], dtype=float) #np.zeros([(self.l_max + 1)**2], dtype=float)
-        self.B = np.zeros([10], dtype=float) #np.zeros([(self.l_max + 1)**2], dtype=float)
-
-        self.C_EE = Spectrum(
-            [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1100, 4*uK), (3000, 1*uK), (4000, 0.000000000000000000000001*uK), (200000, 0.000000000000000000000001*uK)]
-        )
-        self.C_TT = Spectrum(
-            [(2, 30*uK), (30, 30*uK), (100, 70*uK), (700, 40*uK), (3000, 5*uK), (20000, 0.1*uK)]
-        )
+        return self.nodes[-1][1]
     
-    def index(self, l, m):
-        ''' Converts from the natural indices to the index used in the numpy array.
+    def power(self, l):
+        # Evaluate the total power per unit solid angle in the l-modes from the delta_T quantity
         
-              : m = ...
-         l = 0:        0
-         l = 1:     -1 0 1
-         l = 2:  -2 -1 0 1 2
-        '''
-        
-        assert l >= 0 and abs(m) <= l, "Badly defined l,m indices"
-        # index of middle of row: total elements in tree MINUS number elements after zero (incl. zero itself)
-        zero_index = (l + 1)**2 - (l + 1)
-        return zero_index + m
-    
-    def indices(self, index):
-        ''' Converts from the numpy indices to the natural indices of E and B coefficients. '''
-        raise NotImplementedError
-    
-    def generate(self):
-        # Generate random numbers
-        E_featureless = np.random.normal(0, 1, len(self.E))
-        B_featureless = np.random.normal(0, 1, len(self.B))
-        
-        # Generate E and B coefficients from spectrum and random numbers
-        for l in range(2, self.l_max + 1):
-            for k in range(-l, l + 1):
-                index = self.index(l, k)
-                self.E[index] = E_featureless[index]*self.C_EE.eval(l)
-                self.B[index] = B_featureless[index]*self.C_BB.eval(l)
+        C_l = self.delta_T(l)**2 * 2*math.pi/(l*(l + 1))
+        return (2*l + 1) * C_l / (4*math.pi)
 
 class Frame(object):
     def __init__(self, phi, theta, size, num_pixels):
@@ -131,31 +111,20 @@ class Frame(object):
         :param pixels: Number of pixels in the frame
         '''
         
+        
         self.phi = phi
         self.theta = theta
         self.size = size
         self.num_pixels = num_pixels
         
-        self.cmb = CMB(size/num_pixels)
-        self.sigma = np.array(
-            [[0 if k == l == 0 else self.cmb.C_TT.eval(np.sqrt(k**2 + l**2)*math.pi/self.size) for k in range(self.num_pixels)] for l in range(self.num_pixels)]
+        self.C_EE = Spectrum(
+            [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1100, 4*uK), (3000, 1*uK), (20000, 0.1*uK)]
         )
-        self.modes = np.multiply(
-            np.reshape(
-                np.sum(
-                    [np.random.normal(0, 1, num_pixels**2),
-                    np.multiply(1j, np.random.normal(0, 1, num_pixels**2))],
-                    axis=0
-                ),
-                [num_pixels, num_pixels]
-            ),
-            self.sigma
+        self.C_TT = Spectrum(
+            [(2, 30*uK), (30, 30*uK), (100, 70*uK), (700, 40*uK), (3000, 5*uK), (20000, 5*uK)]
         )
-        self.pixels = np.fft.ifft2(self.modes).real
-        #self.pixels = np.array(
-        #    [[self.pixel_val(i, j).real for j in range(self.num_pixels)] for i in range(self.num_pixels)]
-        #)
         
+        self.pixels = np.zeros([self.num_pixels, self.num_pixels])
     
     def pixel_pos(self, i, j):
         ''' Converts from pixel indices to angular coordinates
@@ -176,6 +145,30 @@ class Frame(object):
         index = np.array([i, j])
         
         return np.sum([begin, np.multiply(pixel, index)], axis=0)
+    
+    def add_noise(self):
+        modes = square_complex(self.num_pixels)
+        
+        for i in range(self.num_pixels):
+            for j in range(self.num_pixels):
+                mode, num_modes = angled_mode(i, j, self.num_pixels)
+                if mode == 0:
+                    continue
+                
+                # Wavelength of the mode in units of spherical-coordinate radians (see numpy fft for reference)
+                wavelength = self.size / mode
+                
+                l = 2*math.pi / wavelength
+                
+                # The amplitude of the i-j mode goes like power per unit solid angle
+                power = self.C_TT.power(l) / num_modes
+                
+                # The power in a given mode is evenly distributed between the real and imaginary parts, hence 1/2 factor
+                random_complex = np.random.randn() + np.random.randn()*1j
+                modes[i][j] += np.sqrt(power/2) * random_complex
+        
+        
+        self.pixels += np.fft.fft2(modes).real + np.fft.fft2(modes).imag
     
     def add_strings(self, num_strings):
         if not num_strings:
@@ -198,7 +191,8 @@ class Frame(object):
                     self.pixels[i][j] += string.width(rho)
     
     def draw(self):
-        plt.imshow(self.pixels,interpolation='none')
+        plt.imshow(self.pixels/uK)
+        plt.colorbar()
         plt.show()
 
 
