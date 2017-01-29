@@ -92,12 +92,6 @@ class Spectrum(object):
             return start[1] * (l/start[0])**alpha
         
         return self.nodes[-1][1]
-    
-    def power(self, l):
-        # Evaluate the total power per unit solid angle in the l-modes from the delta_T quantity
-        
-        C_l = self.delta_T(l)**2 * 2*math.pi/(l*(l + 1))
-        return (2*l + 1) * C_l / (4*math.pi)
 
 class Frame(object):
     def __init__(self, phi, theta, size, num_pixels):
@@ -118,13 +112,23 @@ class Frame(object):
         self.num_pixels = num_pixels
         
         self.C_EE = Spectrum(
-            [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1100, 4*uK), (3000, 1*uK), (20000, 0.1*uK)]
+            [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1100, 4*uK), (3000, 1*uK)]
         )
         self.C_TT = Spectrum(
             [(2, 30*uK), (30, 30*uK), (100, 70*uK), (700, 40*uK), (3000, 5*uK), (20000, 5*uK)]
         )
         
         self.pixels = np.zeros([self.num_pixels, self.num_pixels])
+    
+    @property
+    def pixel_width(self):
+        return self.size/self.num_pixels
+    
+    def pixel_index(self, x, y):
+        j = int(round((x - self.phi + self.size/2 - self.pixel_width/2)/self.pixel_width))
+        i = int(round((y - self.theta + self.size/2 - self.pixel_width/2)/self.pixel_width))
+        
+        return i, j
     
     def pixel_pos(self, i, j):
         ''' Converts from pixel indices to angular coordinates
@@ -133,14 +137,13 @@ class Frame(object):
         :param j: Pixel index along base of image
         :return: Angular coordinates
         '''
-        pixel_width = self.size / self.num_pixels
         begin = np.array([
-            self.phi - self.size/2 + pixel_width/2,
-            self.theta - self.size/2 + pixel_width/2
+            self.phi - self.size/2 + self.pixel_width/2,
+            self.theta - self.size/2 + self.pixel_width/2
         ])
         pixel = np.array([
-            pixel_width, 
-            pixel_width
+            self.pixel_width, 
+            self.pixel_width
         ])
         index = np.array([i, j])
         
@@ -156,42 +159,43 @@ class Frame(object):
                     continue
                 
                 # Wavelength of the mode in units of spherical-coordinate radians (see numpy fft for reference)
-                wavelength = self.size / mode
-                
-                l = 2*math.pi / wavelength
+                #wavelength = self.size / mode
+                l = (2*math.pi * mode) / self.size
+                dl = (2*math.pi * 0.5) / self.size
                 
                 # The amplitude of the i-j mode goes like power per unit solid angle
-                power = self.C_TT.power(l) / num_modes
+                d_log = np.log((l + dl)/(l - dl))
+                power = self.C_EE.delta_T(l)**2 * d_log/ (4*math.pi * num_modes)
                 
                 # The power in a given mode is evenly distributed between the real and imaginary parts, hence 1/2 factor
                 random_complex = np.random.randn() + np.random.randn()*1j
                 modes[i][j] += np.sqrt(power/2) * random_complex
         
-        
         self.pixels += np.fft.fft2(modes).real + np.fft.fft2(modes).imag
     
     def add_strings(self, num_strings):
         if not num_strings:
-            return
+            pass
         
         orientations = 2 * np.random.randint(2, size=num_strings) - 1
-        phis = const.pi * np.random.random(num_strings)
-        widths = np.random.normal(5*uK, 1.5*uK, num_strings)
-        dists = self.size * (np.random.random(num_strings) - 0.5)
+        angles = const.pi * np.random.random(num_strings)
+        widths = np.random.normal(0.1*uK, 0.03*uK, num_strings)
+        phis = self.size * (np.random.random(num_strings) - 0.5) + self.phi
+        thetas = self.size * (np.random.random(num_strings) - 0.5) + self.theta
         
-        
-        for orientation, phi, dist, width in zip(orientations, phis, dists, widths):
-            string = wake.SimpleWake(phi, dist, width, orientation)
+        for angle, phi, theta, width, orientation in zip(angles, phis, thetas, widths, orientations):
+            string = wake.SimpleWake(angle, phi, theta, width, 2*const.deg, orientation)
             
-            for i in range(self.num_pixels):
-                for j in range(self.num_pixels):
-                    relative_pos = self.pixel_pos(i, j) - np.array([self.phi, self.theta])
-                    rho = string.linear_coords(relative_pos[0], relative_pos[1])[1]
-                    
-                    self.pixels[i][j] += string.width(rho)
+            x, y, ranges = string.pixelation(self.pixel_width)
+            i_begin, j_begin = self.pixel_index(x, y)
+            
+            for i, bounds in zip(range(1, len(ranges)+ 1), ranges):
+                for j in range(bounds[0], bounds[1], 1):
+                    if 0 <= i+i_begin < self.num_pixels and 0 <= j+j_begin < self.num_pixels:
+                        self.pixels[i+i_begin][j+j_begin] += string.width_at_pixel(x, y, i, j, self.pixel_width)
     
     def draw(self):
-        plt.imshow(self.pixels/uK)
+        plt.imshow(self.pixels/uK, interpolation='nearest')
         plt.colorbar()
         plt.show()
 

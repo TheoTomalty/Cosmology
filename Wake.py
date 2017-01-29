@@ -4,35 +4,97 @@ import math
 import Constants as const
 
 class SimpleWake(object):
-    def __init__(self, phi, dist, tot_width, orientation):
+    def __init__(self, angle, phi, theta, total_width, length, orientation):
+        self.angle = angle
         self.phi = phi
-        self.dist = dist
-        self.tot_width = tot_width
-        self.span = 1.5*const.deg
+        self.theta = theta
+        self.length = length
+        self.total_width = total_width
+        self.span = 1*const.deg
+        self.smooth = 0.5*const.deg
         
         assert abs(orientation) == 1, "The attribute orientation must be +/- 1"
         self.orientation = orientation
     
+    @property
+    def slope(self):
+        return np.tan(self.angle)
+    
+    @property
+    def inverse_slope(self):
+        return -1/self.slope
+    
     def linear_coords(self, x, y):
         # [rho, line] conversion
-        y_vec = np.array([-math.sin(self.phi), math.cos(self.phi)])
-        x_vec = np.array([math.cos(self.phi), math.sin(self.phi)])
+        rho = x*math.sin(self.angle) - y*math.cos(self.angle)
+        line = x*math.cos(self.angle) + y*math.sin(self.angle)
         
-        return y*y_vec + x*x_vec
+        return rho, line
     
-    def width(self, rho):
-        # Measure the off dimension from the string itself rather than centre of image
-        rho = rho - self.dist
+    def width(self, rho, line):
+        rho = self.orientation * rho
+        line = abs(line)
+        if line < self.length/2 - self.smooth:
+            scaling = 1
+        elif line < self.length/2:
+            scaling = (self.length/2 - line)/self.smooth
+        else:
+            scaling = 0
         
-        if self.orientation * rho < 0:
+        if abs(rho) > self.span/2:
             return 0
         
-        linear = self.span - self.orientation * rho
-        if linear < 0:
-            return 0
-        
-        return self.tot_width * (linear / self.span)
+        return scaling*(rho + self.span/2)/self.span * self.total_width
     
+    def width_at_pixel(self, x, y, i, j, size):
+        x = x - self.phi + j*size
+        y = y - self.theta + i*size
+        
+        linear = self.linear_coords(x, y)
+        return self.width(*linear)
+    
+    def pixelation(self, step):
+        assert 0 < self.angle < math.pi
+        
+        sign = (1 if self.angle < math.pi/2 else -1)
+        slope = abs(self.slope)
+        inverse_slope = -abs(self.inverse_slope)
+        if sign > 0:
+            angle = self.angle
+        else:
+            angle = math.pi - self.angle
+        
+        side1 = - np.cos(angle) * self.length/2
+        side2 =  abs(np.cos(math.pi/2 - angle) * self.span/2)
+        bottom = slope * side1 - abs(inverse_slope) * side2
+        
+        height_step = step
+        ranges = []
+        while True:
+            left_range1 = - height_step / abs(inverse_slope)
+            left_range2 = height_step / abs(slope) - self.span / np.sin(angle)
+            
+            right_range1 = height_step / abs(slope)
+            right_range2 = -height_step / abs(inverse_slope) + self.length / np.cos(angle)
+            
+            index_left = int(math.ceil(max(left_range1, left_range2) / step))
+            index_right = int(math.floor(min(right_range1, right_range2) / step))
+            
+            if index_left > index_right:
+                break
+            else:
+                height_step += step
+                ranges.append((index_left, index_right))
+        
+        if sign > 0:
+            return self.phi + side1 + side2, self.theta + bottom, ranges
+        
+        inverted_ranges = []
+        for bounds in ranges:
+            inverted_ranges.append((-bounds[1], -bounds[0]))
+        
+        return self.phi - (side1 + side2), self.theta + bottom, inverted_ranges
+
 def gamma(v):
     # Reletivistic gamma factor for a velocity v
     return 1/np.sqrt(1 - (v)**2)
