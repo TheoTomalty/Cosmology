@@ -156,7 +156,7 @@ def read_file(filename_queue):
     data_defaults = []
     # Each line should have one input from each pixel in the 30x30 image as well as
     # two numbers, [1, 0] or [0, 1], describing the true particle type
-    for i in range(FLAGS.data_size + 2):
+    for i in range(FLAGS.data_size + 1):
       data_defaults.append([0.0])
     
     # Convert a single line, in cvs format, to a list of tf.float tensors with the same size as data_defaults
@@ -165,7 +165,7 @@ def read_file(filename_queue):
     datum = tf.pack(data_row[:FLAGS.data_size])
     
     # Pack last two tensors into particle identification (1hot)
-    label = tf.pack(data_row[FLAGS.data_size:FLAGS.data_size+2])
+    label = tf.pack(data_row[FLAGS.data_size])
     
     #Return the distinct tensors associated with a single-line read of a file
     return datum, label
@@ -185,7 +185,7 @@ def input_pipeline(files, size, num_epochs=None, shuffle=True):
     filename_queue = tf.train.string_input_producer(
           files, num_epochs=num_epochs, shuffle=shuffle)
     #Initialize tensors associated with a single line-read of the file queue
-    datum,  label = read_file(filename_queue)
+    datum, label = read_file(filename_queue)
     #Large capacity for better shuffling
     capacity = FLAGS.min_after_dequeue + 3 * size
     #Send the single-line read operation into a Tensorflow batch object that calls it $size times in succession (with possible shuffing)
@@ -201,7 +201,7 @@ def input_pipeline(files, size, num_epochs=None, shuffle=True):
     #Each batch object is a tensor of shape [$size, ...] where ... represents the shape of the objects it contains (ex. [$size, 2] for labels)
     return pixel_batch, label_batch
 
-def get_files(name, extension="txt"):
+def get_files(directory, name, extension="txt"):
     '''
     Easy Generation of the list of files to use in the algorithm.
     Assumes format where the FLAGS.image_directory containing 
@@ -216,7 +216,7 @@ def get_files(name, extension="txt"):
     file_num = 1
     while file_num:
         #The path of the $name$file_num.txt file in the image directory
-        file_name = os.path.join(FLAGS.image_directory, name + str(file_num) + '.' + extension)
+        file_name = os.path.join(directory, name + str(file_num) + '.' + extension)
         #Add the file to filenames if it exists, break the loop if not since there will be no more files of this type
         if os.path.isfile(file_name):
             file_names.append(file_name)
@@ -229,7 +229,7 @@ def get_files(name, extension="txt"):
 
 def input(shuffle=True):
     # Handles all the information input for the network training and testing
-    file_names = get_files('images')
+    file_names = get_files(FLAGS.image_directory, 'images')
     assert len(file_names), "Error: No files listed in your queue"
     
     # Get the input batches
@@ -239,9 +239,8 @@ def input(shuffle=True):
     # while there is a fourth dimension with a length of '1' to indicate that we are dealing with a black-and-white image rather than a
     # 3-channel colour image.
     images = tf.reshape(pipeline[0], [-1, FLAGS.num_pixels, FLAGS.num_pixels, 1])
-    _, indicator = tf.unstack(pipeline[1], axis=1)
     
-    return images, tf.cast(indicator, tf.bool)
+    return images, tf.cast(pipeline[1], tf.bool)
 
 def get_summary_filter(labels, correct, show_worked=True, show_strings=True, show_unstringed=True):
     '''

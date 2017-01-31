@@ -32,7 +32,7 @@ def angled_mode(i, j, total):
     if angular_span > 0:
         return radius, angular_span * radius
     
-    return radius, 1
+    return radius, math.pi/2*radius
 
 class Spectrum(object):
     def __init__(self, nodes=()):
@@ -111,13 +111,6 @@ class Frame(object):
         self.size = size
         self.num_pixels = num_pixels
         
-        self.C_EE = Spectrum(
-            [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1100, 4*uK), (3000, 1*uK)]
-        )
-        self.C_TT = Spectrum(
-            [(2, 30*uK), (30, 30*uK), (100, 70*uK), (700, 40*uK), (3000, 5*uK), (20000, 5*uK)]
-        )
-        
         self.pixels = np.zeros([self.num_pixels, self.num_pixels])
     
     @property
@@ -149,7 +142,9 @@ class Frame(object):
         
         return np.sum([begin, np.multiply(pixel, index)], axis=0)
     
-    def add_noise(self):
+    def add_noise(self, spectrum):
+        assert isinstance(spectrum, Spectrum)
+        
         modes = square_complex(self.num_pixels)
         
         for i in range(self.num_pixels):
@@ -165,7 +160,7 @@ class Frame(object):
                 
                 # The amplitude of the i-j mode goes like power per unit solid angle
                 d_log = np.log((l + dl)/(l - dl))
-                power = self.C_EE.delta_T(l)**2 * d_log/ (4*math.pi * num_modes)
+                power = spectrum.delta_T(l)**2 * d_log/ (4*math.pi * num_modes)
                 
                 # The power in a given mode is evenly distributed between the real and imaginary parts, hence 1/2 factor
                 random_complex = np.random.randn() + np.random.randn()*1j
@@ -173,13 +168,13 @@ class Frame(object):
         
         self.pixels += np.fft.fft2(modes).real + np.fft.fft2(modes).imag
     
-    def add_strings(self, num_strings):
+    def add_strings(self, num_strings, scale=1):
         if not num_strings:
             pass
         
         orientations = 2 * np.random.randint(2, size=num_strings) - 1
         angles = const.pi * np.random.random(num_strings)
-        widths = np.random.normal(0.1*uK, 0.03*uK, num_strings)
+        widths = np.random.normal(scale*0.1*uK, 0.03*uK, num_strings)
         phis = self.size * (np.random.random(num_strings) - 0.5) + self.phi
         thetas = self.size * (np.random.random(num_strings) - 0.5) + self.theta
         

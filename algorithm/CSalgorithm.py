@@ -124,7 +124,7 @@ def process():
                     tracker.print_average(batch_num)
                 
                 #Periodically save moving averages to checkpoint files
-                if not batch_num % 20 or batch_num == FLAGS.num_iterations:
+                if not batch_num % 50 or batch_num == FLAGS.num_iterations:
                     saver.save(sess)
         else:
             #Testing Protocol
@@ -132,11 +132,10 @@ def process():
             
             for file_num in range(1, FLAGS.num_iterations + 1):
                 #Evaluate the relevant information for testing (algorithm output, correct classification, and algorithm accuracy)
-                acc_value = sess.run(accuracy)
+                scalar_value = sess.run(scalar)
                 
-                #Cumulatively track and print accuracy for monitoring purposes
-                tracker.add([acc_value])
-                tracker.print_average("Testing",reset=False)
+                #Track and print accuracy for monitoring purposes
+                tracker.save_output(file_num, FLAGS.image_directory, scalar_value)
         
         #Wrap up
         coord.request_stop()

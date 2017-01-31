@@ -1,5 +1,7 @@
 import tensorflow as tf
 import CSheader as h
+import os
+import json
 
 FLAGS = h.FLAGS
 
@@ -54,6 +56,19 @@ class Tracker(object):
         if reset:
             self.reset()
         print string
+    
+    def save_output(self, step, directory, tensor):
+        info_path = os.path.join(directory, "info" + str(step) + ".txt")
+        test_path = os.path.join(directory, "final" + str(step) + ".txt")
+        with open(info_path, 'r') as file:
+            with open(test_path, 'w') as test_file:
+                for line, value in zip(file, tensor):
+                    info = json.loads(line[:-1])
+                    info["value"] = int(value)
+                    print info
+                    
+                    test_file.write(json.dumps(info) + '\n')
+                
     
     def add(self, vars):
         ''' Append values to the moving average

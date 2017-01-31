@@ -30,13 +30,13 @@ class GlobalFlags:
         self.min_after_dequeue = 200 # Quantity used for shuffling batches. Higher = better randomization but slower processing speed.
         self.filter_size = 5 # Pixel width of filters used for feature identification. To change this you will need to also modify 
                              # the size of the default filters in get_initial_filters. Preferably an odd number.
-        self.images_per_file = 1000 
+        self.images_per_file = 200 
         
         # Variable Parameters
         self.average_decay_rate = 0. # Weight used for moving averages of network variables $avg_{i} = 0.995*avg_{i-1} + (1.0 - 0.995)*var_{i}$
         self.batch_size = 50 # Number of images in a single batch (stochastic method of machine learning)
         self.num_angles = 10 # The number of angles for which to create corresponding filters
-        self.initial_learning_rate = 0.08 # Step size used by tf.train.AdamOptimizer before decay
+        self.initial_learning_rate = 0.5 # Step size used by tf.train.AdamOptimizer before decay
         self.decay_rate_per_thousand = 1/math.e # Ratio that learning rate (step size) is reduced in every 1000 batch interval
     
     def set_parameters(self, parameters):
