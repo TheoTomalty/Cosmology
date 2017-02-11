@@ -51,7 +51,7 @@ class SimpleWake(object):
         y = y - self.theta + i*size
         
         linear = self.linear_coords(x, y)
-        return self.width(*linear)
+        return 10*const.uK#self.width(*linear)
     
     def pixelation(self, step):
         assert 0 < self.angle < math.pi
@@ -94,6 +94,48 @@ class SimpleWake(object):
             inverted_ranges.append((-bounds[1], -bounds[0]))
         
         return self.phi - (side1 + side2), self.theta + bottom, inverted_ranges
+    
+    def edge_scan(self, x_pixel, y_pixel, size):
+        sign = (-1 if self.angle < np.pi/2 else 1)
+        centre_line = (- sign*np.sin(self.angle) * (self.span/2), sign*np.cos(self.angle) * (self.span/2))
+        centre_index = (int(round((centre_line[0]-x_pixel)/size)), int(round((centre_line[1]-y_pixel)/size)))
+        centre_pixel = (centre_index[0] * size + x_pixel, centre_index[1] * size + y_pixel)
+        print centre_line, centre_index, centre_pixel
+        
+        s = 0
+        position = centre_line
+        index = centre_index
+        indices = [index]
+        y_line = centre_pixel[1] + 0.5 * size
+        x_line = centre_pixel[0] + 0.5 * size
+        
+        while s < self.length + self.smooth/2:
+            x_intersect = abs((y_line - position[1])/self.slope)
+            s_x = np.sqrt(x_intersect**2 + (y_line - position[1])**2)
+            y_intersect = abs((x_line - position[0])*self.slope)
+            s_y = np.sqrt(y_intersect**2 + (x_line - position[0])**2)
+            print x_intersect, y_intersect
+            #print s, position, index, y_line, x_line, x_intersect, y_intersect, self.slope
+            
+            if s_x < s_y:
+                s += s_x
+                position = (position[0] + x_intersect, y_line)
+                index = (index[0], index[1] + 1)
+                indices.append(index)
+                y_line += size
+            elif s_y < s_x:
+                s += s_y
+                position = (x_line, position[1] + y_intersect)
+                index = (index[0] - sign, index[1])
+                indices.append(index)
+                x_line += size
+            else:
+                print "WRONG"
+            #print s, position, index, y_line, x_line
+        
+        #print indices
+        
+        return indices
 
 def gamma(v):
     # Reletivistic gamma factor for a velocity v

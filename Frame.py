@@ -110,8 +110,10 @@ class Frame(object):
         self.theta = theta
         self.size = size
         self.num_pixels = num_pixels
+        self.num_regions = num_pixels/15
         
         self.pixels = np.zeros([self.num_pixels, self.num_pixels])
+        self.regions = np.zeros([self.num_regions, self.num_regions])
     
     @property
     def pixel_width(self):
@@ -179,19 +181,34 @@ class Frame(object):
         thetas = self.size * (np.random.random(num_strings) - 0.5) + self.theta
         
         for angle, phi, theta, width, orientation in zip(angles, phis, thetas, widths, orientations):
-            string = wake.SimpleWake(angle, phi, theta, width, 2*const.deg, orientation)
-            
-            x, y, ranges = string.pixelation(self.pixel_width)
-            i_begin, j_begin = self.pixel_index(x, y)
-            
-            for i, bounds in zip(range(1, len(ranges)+ 1), ranges):
-                for j in range(bounds[0], bounds[1], 1):
-                    if 0 <= i+i_begin < self.num_pixels and 0 <= j+j_begin < self.num_pixels:
-                        self.pixels[i+i_begin][j+j_begin] += string.width_at_pixel(x, y, i, j, self.pixel_width)
+            self.add_string(angle, phi, theta, width, orientation)
+    
+    def add_string(self, angle, phi, theta, width, orientation):
+        string = wake.SimpleWake(angle, phi, theta, width, 2*const.deg, orientation)
+        
+        x, y, ranges = string.pixelation(self.pixel_width)
+        i_begin, j_begin = self.pixel_index(x, y)
+        
+        for i, bounds in zip(range(1, len(ranges)+ 1), ranges):
+            for j in range(bounds[0], bounds[1], 1):
+                if 0 <= i+i_begin < self.num_pixels and 0 <= j+j_begin < self.num_pixels:
+                    self.pixels[i+i_begin][j+j_begin] += string.width_at_pixel(x, y, i, j, self.pixel_width)
+        
+        wake_index = self.pixel_index(phi, theta)
+        wake_centre = self.pixel_pos(*wake_index)
+        indices = string.edge_scan(wake_centre[0] - phi, wake_centre[1] - theta, self.pixel_width)
+        for index in indices:
+            if 0 <= wake_index[1]+index[1] < self.num_pixels and 0 <= wake_index[0]+index[0] < self.num_pixels:
+                self.pixels[wake_index[1]+index[1]][wake_index[0]+index[0]] += 10*uK
+        
+    
     
     def draw(self):
         plt.imshow(self.pixels/uK, interpolation='nearest')
-        plt.colorbar()
+        cbar = plt.colorbar()
+        plt.xlabel("Pixel Number")
+        plt.ylabel("Pixel Number")
+        cbar.ax.set_ylabel('Temperature ($\mu$K)', labelpad=14)
         plt.show()
 
 

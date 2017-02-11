@@ -15,14 +15,14 @@ class Printer(DirectoryEmbedded):
     def __init__(self, image_directory):
         DirectoryEmbedded.__init__(self, os.path.join(image_directory))
         
-        self.resolution = 3*const.arcmin
-        self.num_pixels = 100
+        self.resolution = 1*const.arcmin
+        self.num_pixels = 300
         
         self.C_EE = Spectrum(
             [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1100, 4*uK), (3000, 1*uK)]
         )
         self.C_TT = Spectrum(
-            [(2, 30*uK), (30, 30*uK), (100, 70*uK), (700, 40*uK), (3000, 5*uK), (20000, 5*uK)]
+            [(2, 30*uK), (30, 30*uK), (100, 70*uK), (700, 40*uK), (3000, 5*uK)]
         )
     
     @property
@@ -53,7 +53,7 @@ class Printer(DirectoryEmbedded):
     
     def queues(self, train=False):
         if train:
-            return [[(np.random.randint(2)*np.pi/2, i % 1) for i in range(1000)]]
+            return [[(np.pi/2, i % 1) for i in range(1000)]]
         
         queue = []
         
