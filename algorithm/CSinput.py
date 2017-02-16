@@ -1,10 +1,12 @@
 import tensorflow as tf
+import numpy as np
 import CSheader as h
 import os
 import json
 from shutil import move
 from os import remove
 from DirectoryEmbedded import *
+#import CSgraph
 
 FLAGS = h.FLAGS
 
@@ -175,11 +177,32 @@ def input(shuffle=True):
 def mask(images, show):
     return tf.boolean_mask(images, show)
 
-def get_summary(images):
+#def pack_tensorboard(images):
+#    conv1_images = tf.transpose(
+#        CSgraph.first_convolution(images)[:FLAGS.num_tensorboard],
+#        [3, 0, 1, 2]
+#    )
+#    #conv2_images = tf.transpose(
+#    #    CSgraph.second_convolution(images)[:FLAGS.num_tensorboard],
+#    #    [3, 0, 1, 2]
+#    #)
+#    
+#    return tf.concat([conv1_images], 0)
+
+def print_tensorboard(session, image_packages):
+    summaries = []
+    for package, i in zip(image_packages, range(100)):
+        for image_batch, j in zip(package, range(1000)):
+            images = np.expand_dims(image_batch, axis=3)
+            name = "conv" + str(i + 1) + "_image" + str(j + 1)
+            summaries.append(get_summary(images, name))
+    write(session, summaries)
+
+def get_summary(images, name):
     #Construct the summary object that sends the images tensor to Tensorboard for display (displays a maximum of $max_images images)
-    return tf.summary.image("data", images, max_outputs=FLAGS.num_tensorboard)
+    return tf.summary.image(name, images, max_outputs=FLAGS.num_tensorboard)
     
-def write(session, summary):
+def write(session, summaries):
     # Function to save images in an image summary (from get_summary) to Tensorboard log files
     logdir = '/tmp/logs' # Standard directory to save the display images in Tensorboard format
     
@@ -193,4 +216,5 @@ def write(session, summary):
             print "Unexpected file in logdir: " + f
     # Write summary object
     writer = tf.summary.FileWriter(logdir, session.graph)
-    writer.add_summary(session.run(summary), 0)
+    for summary in summaries:
+        writer.add_summary(session.run(summary), 0)
