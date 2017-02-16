@@ -26,7 +26,7 @@ class GlobalFlags:
         self.print_tensorboard = False # Use with <self.training = 0> to save images into logs that can be seen using Tensorboard
         
         # Fixed Parameters
-        self.num_pixels = 75 # Width of square input images to network, in number of pixels. Image is num_pixels x num_pixels in total.
+        self.num_pixels = 95 # Width of square input images to network, in number of pixels. Image is num_pixels x num_pixels in total.
         self.num_regions = 5
         self.min_after_dequeue = 200 # Quantity used for shuffling batches. Higher = better randomization but slower processing speed.
         self.filter_size = 5 # Pixel width of filters used for feature identification. To change this you will need to also modify 
@@ -38,7 +38,7 @@ class GlobalFlags:
         self.average_decay_rate = 0. # Weight used for moving averages of network variables $avg_{i} = 0.995*avg_{i-1} + (1.0 - 0.995)*var_{i}$
         self.batch_size = 300 # Number of images in a single batch (stochastic method of machine learning)
         self.num_angles = 12 # The number of angles for which to create corresponding filters
-        self.initial_learning_rate = 0.5 # Step size used by tf.train.AdamOptimizer before decay
+        self.initial_learning_rate = 0.2 # Step size used by tf.train.AdamOptimizer before decay
         self.decay_rate_per_thousand = 1/math.e # Ratio that learning rate (step size) is reduced in every 1000 batch interval
     
     def set_parameters(self, parameters):
@@ -89,9 +89,9 @@ FLAGS = GlobalFlags()##
 ######################################################
 
 
-def conv2d(x, W):
+def conv2d(x, W, padding='VALID'):
     # Convolute a 2D image, x, with a set of filters, W, using one-pixel steps
-    return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
+    return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding=padding)
 
 def get_initial_filters(num_angles):
     ''' Generates a set of filters that will be used to initialize the networks so that they 

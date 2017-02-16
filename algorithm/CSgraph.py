@@ -37,16 +37,22 @@ def flatten_image(images):
         [1., 1., 0., -1., -2.]
         ])
     
-    flat = tf.ones([FLAGS.filter_size, FLAGS.filter_size, 1, 1], )
+    flat = tf.ones([FLAGS.filter_size, FLAGS.filter_size, 1, 1])
     smooth_x = tf.reshape(smooth, [FLAGS.filter_size, FLAGS.filter_size, 1, 1])
     smooth_y = tf.transpose(smooth_x, [1, 0, 2, 3])
     sobel_x = tf.reshape(sobel, [FLAGS.filter_size, FLAGS.filter_size, 1, 1])
     sobel_y = tf.transpose(sobel_x, [1, 0, 2, 3])
     
-    amount_flat = h.conv2d(images, flat) / tf.reduce_sum(flat * flat)
+    amount_flat = h.conv2d(images, flat, padding='SAME') / tf.reduce_sum(flat * flat)
     remove_flat = h.conv2d(amount_flat, flat) / FLAGS.filter_size**2
     
-    return images - remove_flat#tf.reshape(h_conv, [FLAGS.get_batch_size(), FLAGS.num_pixels, FLAGS.num_pixels, 1])
+    amount_x = h.conv2d(images, sobel_x, padding='SAME') / tf.reduce_sum(sobel_x * smooth_x)
+    remove_x = - h.conv2d(amount_x, smooth_x) / FLAGS.filter_size**2
+    
+    amount_y = h.conv2d(images, sobel_y, padding='SAME') / tf.reduce_sum(sobel_y * smooth_y)
+    remove_y = - h.conv2d(amount_y, smooth_y) / FLAGS.filter_size**2
+    
+    return images[:, 2:-2, 2:-2, :] - remove_flat - remove_x - remove_y#tf.reshape(h_conv, [FLAGS.get_batch_size(), FLAGS.num_pixels, FLAGS.num_pixels, 1])
 
 def convolution(images, summary=None):
     images = flatten_image(images)
@@ -69,7 +75,7 @@ def convolution(images, summary=None):
         # Fix average at zero
         convolution_weights_1 = normalize_filters(convolution_weights_1)
         
-        h_conv1 = set_zero_edges(tf.nn.relu(h.conv2d(images, convolution_weights_1)), FLAGS.num_pixels, 2)
+        h_conv1 = tf.nn.relu(h.conv2d(images, convolution_weights_1))
         h_pool1 = tf.nn.max_pool(h_conv1, ksize=[1, 3, 3, 1], strides=[1, 3, 3, 1], padding='VALID')
         conv1_board = tf.transpose(h_conv1[:FLAGS.num_tensorboard], [0, 3, 1, 2])
         
@@ -94,7 +100,7 @@ def convolution(images, summary=None):
         )
         convolution_weights_2 = normalize_filters(convolution_weights_2)
         
-        h_conv2 = set_zero_edges(tf.nn.relu(h.conv2d(h_pool1, convolution_weights_2)),25, 2)
+        h_conv2 = tf.nn.relu(h.conv2d(h_pool1, convolution_weights_2))
         h_pool2 = tf.nn.avg_pool(
             tf.reduce_mean(h_conv2, axis=3, keep_dims=True),
             ksize=[1, 5, 5, 1],

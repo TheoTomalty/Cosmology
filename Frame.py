@@ -109,9 +109,10 @@ class Frame(object):
         
         self.phi = phi
         self.theta = theta
-        self.size = size
-        self.num_pixels = num_pixels
+        self.num_pixels = num_pixels + 20
+        self.size = size * (self.num_pixels/num_pixels)
         self.num_regions = num_pixels/15
+        self.region_width = size/self.num_regions
         
         self.pixels = np.zeros([self.num_pixels, self.num_pixels])
         self.regions = np.zeros([self.num_regions, self.num_regions])
@@ -120,14 +121,11 @@ class Frame(object):
     def pixel_width(self):
         return self.size/self.num_pixels
     
-    @property
-    def region_width(self):
-        return self.size/self.num_regions
-    
     def pixel_index(self, x, y, region=False):
         width = self.pixel_width if not region else self.region_width
-        j = int(round((x - self.phi + self.size/2 - width/2)/width))
-        i = int(round((y - self.theta + self.size/2 - width/2)/width))
+        size = self.size if not region else self.region_width * self.num_regions
+        j = int(round((x - self.phi + size/2 - width/2)/width))
+        i = int(round((y - self.theta + size/2 - width/2)/width))
         
         return i, j
     
@@ -139,10 +137,11 @@ class Frame(object):
         :return: Angular coordinates
         '''
         width = self.pixel_width if not region else self.region_width
+        size = self.size if not region else self.region_width * self.num_regions
         
         begin = np.array([
-            self.phi - self.size/2 + width/2,
-            self.theta - self.size/2 + width/2
+            self.phi - size/2 + width/2,
+            self.theta - size/2 + width/2
         ])
         pixel = np.array([
             width, 
@@ -223,15 +222,21 @@ class Frame(object):
         
     
     def draw(self):
+        f = plt.figure(1)
         plt.imshow(self.regions, interpolation='nearest')
-        plt.show()
+        f.show()
         
-        plt.imshow(self.pixels/uK, interpolation='nearest')
+        g = plt.figure(2)
+        plt.imshow(
+            np.array([row[10:-10] for row in self.pixels[10:-10]])/uK,
+            interpolation='nearest'
+        )
         cbar = plt.colorbar()
         plt.xlabel("Pixel Number")
         plt.ylabel("Pixel Number")
         cbar.ax.set_ylabel('Temperature ($\mu$K)', labelpad=14)
-        plt.show()
+        g.show()
+        raw_input()
 
 
 if __name__ == "__main__":
