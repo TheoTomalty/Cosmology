@@ -3,6 +3,7 @@ import numpy as np
 import math
 import cmath
 import Constants as const
+from Grid import Grid
 import Wake as wake
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -78,7 +79,7 @@ class Spectrum(object):
             return self.nodes[0][1]
         
         for node in self.nodes:
-            if l > node[0]:
+            if l > node[0] and not node[0] == self.nodes[-1][0]:
                 continue
             
             end = node
@@ -91,7 +92,7 @@ class Spectrum(object):
             )
             return start[1] * (l/start[0])**alpha
         
-        return self.nodes[-1][1]
+        raise Exception
 
 class Frame(object):
     def __init__(self, phi, theta, size, num_pixels):
@@ -119,26 +120,33 @@ class Frame(object):
     def pixel_width(self):
         return self.size/self.num_pixels
     
-    def pixel_index(self, x, y):
-        j = int(round((x - self.phi + self.size/2 - self.pixel_width/2)/self.pixel_width))
-        i = int(round((y - self.theta + self.size/2 - self.pixel_width/2)/self.pixel_width))
+    @property
+    def region_width(self):
+        return self.size/self.num_regions
+    
+    def pixel_index(self, x, y, region=False):
+        width = self.pixel_width if not region else self.region_width
+        j = int(round((x - self.phi + self.size/2 - width/2)/width))
+        i = int(round((y - self.theta + self.size/2 - width/2)/width))
         
         return i, j
     
-    def pixel_pos(self, i, j):
+    def pixel_pos(self, i, j, region=False):
         ''' Converts from pixel indices to angular coordinates
 
         :param i: Pixel index along height of image
         :param j: Pixel index along base of image
         :return: Angular coordinates
         '''
+        width = self.pixel_width if not region else self.region_width
+        
         begin = np.array([
-            self.phi - self.size/2 + self.pixel_width/2,
-            self.theta - self.size/2 + self.pixel_width/2
+            self.phi - self.size/2 + width/2,
+            self.theta - self.size/2 + width/2
         ])
         pixel = np.array([
-            self.pixel_width, 
-            self.pixel_width
+            width, 
+            width
         ])
         index = np.array([i, j])
         
@@ -170,40 +178,54 @@ class Frame(object):
         
         self.pixels += np.fft.fft2(modes).real + np.fft.fft2(modes).imag
     
-    def add_strings(self, num_strings, scale=1):
-        if not num_strings:
-            pass
+    def add_strings(self, scale=1):
+        buffer = 1*const.deg
+        num_strings = int(round((self.size/const.deg)**2))
         
-        orientations = 2 * np.random.randint(2, size=num_strings) - 1
-        angles = const.pi * np.random.random(num_strings)
+        angles = 2*const.pi * np.random.random(num_strings)
         widths = np.random.normal(scale*0.1*uK, 0.03*uK, num_strings)
-        phis = self.size * (np.random.random(num_strings) - 0.5) + self.phi
-        thetas = self.size * (np.random.random(num_strings) - 0.5) + self.theta
         
-        for angle, phi, theta, width, orientation in zip(angles, phis, thetas, widths, orientations):
-            self.add_string(angle, phi, theta, width, orientation)
+        phis = (self.size + buffer) * (np.random.random(num_strings) - 0.5) + self.phi
+        thetas = (self.size + buffer) * (np.random.random(num_strings) - 0.5) + self.theta
+        
+        for angle, phi, theta, width in zip(angles, phis, thetas, widths):
+            self.add_string(angle, phi, theta, width)
     
-    def add_string(self, angle, phi, theta, width, orientation):
-        string = wake.SimpleWake(angle, phi, theta, width, 2*const.deg, orientation)
+    def add_string(self, angle, phi, theta, width):
+        string = wake.SimpleWake(angle, phi, theta, width, 2*const.deg)
         
-        x, y, ranges = string.pixelation(self.pixel_width)
-        i_begin, j_begin = self.pixel_index(x, y)
+        i_centre, j_centre = self.pixel_index(phi, theta)
+        grid_centre = self.pixel_pos(i_centre, j_centre)
+        x_0, y_0 = grid_centre[0] - phi, grid_centre[1] - theta
         
-        for i, bounds in zip(range(1, len(ranges)+ 1), ranges):
-            for j in range(bounds[0], bounds[1], 1):
-                if 0 <= i+i_begin < self.num_pixels and 0 <= j+j_begin < self.num_pixels:
-                    self.pixels[i+i_begin][j+j_begin] += string.width_at_pixel(x, y, i, j, self.pixel_width)
+        ranges = string.pixelation(x_0, y_0, self.pixel_width)
+        for j, i_min, i_max in ranges:
+            for i in range(i_min, i_max):
+                if 0 <= i+i_centre < self.num_pixels and 0 <= j+j_centre < self.num_pixels:
+                    self.pixels[j+j_centre][i+i_centre] += string.width_at_pixel(x_0, y_0, i, j, self.pixel_width)
         
-        wake_index = self.pixel_index(phi, theta)
-        wake_centre = self.pixel_pos(*wake_index)
-        indices = string.edge_scan(wake_centre[0] - phi, wake_centre[1] - theta, self.pixel_width)
-        for index in indices:
-            if 0 <= wake_index[1]+index[1] < self.num_pixels and 0 <= wake_index[0]+index[0] < self.num_pixels:
-                self.pixels[wake_index[1]+index[1]][wake_index[0]+index[0]] += 10*uK
+        #indices = string.edge_scan(x_0, y_0, self.pixel_width)
+        #for i, j in indices:
+        #    if 0 <= i+i_centre < self.num_pixels and 0 <= j+j_centre < self.num_pixels:
+        #        self.pixels[j+j_centre][i+i_centre] += 0
         
-    
+        # Print Region information
+        i_reg, j_reg = self.pixel_index(phi, theta, region=True)
+        region_grid = self.pixel_pos(i_reg, j_reg, region=True)
+        x_1, y_1 = region_grid[0] - phi, region_grid[1] - theta
+        
+        grid = Grid(self.region_width)
+        grid.set_origin(x_1, y_1)
+        
+        for i, j, in grid.edge_scan(*string.front_edge):
+            if 0 <= i+i_reg < self.num_regions and 0 <= j+j_reg < self.num_regions:
+                self.regions[j+j_reg][i+i_reg] += 1
+        
     
     def draw(self):
+        plt.imshow(self.regions, interpolation='nearest')
+        plt.show()
+        
         plt.imshow(self.pixels/uK, interpolation='nearest')
         cbar = plt.colorbar()
         plt.xlabel("Pixel Number")

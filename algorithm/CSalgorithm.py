@@ -5,6 +5,7 @@ import sys
 import getopt
 import CSheader as h
 import CSinput
+from Tracker import Tracker
 import CSgraph
 import math
 import json
@@ -80,6 +81,7 @@ def process():
         
         #Get output of the CNN with images as input
         scalar = CSgraph.network(images)
+        print_images = CSgraph.first_convolution(images, summary=True)
         
         #Initialize saver object that takes care of reading and writing parameters to checkpoint files
         saver = CSinput.Saver()
@@ -109,26 +111,30 @@ def process():
         
         if FLAGS.training:
             # Training protocol
-            tracker = CSgraph.Tracker(["Cost", "Accuracy"])
+            tracker = Tracker(["Cost", "Accuracy"])
             
             # Iterate over the desired number of batches
             for batch_num in range(1, FLAGS.num_iterations + 1):
                 #Run the training step once and return real-number values for cost and accuracy
-                _, cost_value, acc_value, scalar_val = sess.run([train_op, cost, accuracy, scalar])
+                _, cost_value, acc_value, real_images = sess.run([train_op, cost, accuracy, print_images])
+                #print np.transpose(variable_val, [3, 0, 1, 2])[0]
                 
                 assert not math.isnan(cost_value), 'Model diverged with cost = NaN'
                 tracker.add([cost_value, acc_value])
                 
                 #Periodically print cost and accuracy values to monitor training process
-                if not batch_num % 2:
+                if not batch_num % 1:
                     tracker.print_average(batch_num)
                 
                 #Periodically save moving averages to checkpoint files
                 if not batch_num % 50 or batch_num == FLAGS.num_iterations:
+                    if FLAGS.print_tensorboard:
+                        image_summary = CSinput.get_summary(real_images)
+                        CSinput.write(sess, image_summary)
                     saver.save(sess)
         else:
             #Testing Protocol
-            tracker = CSgraph.Tracker(["Accuracy"])
+            tracker = Tracker(["Accuracy"])
             
             for file_num in range(1, FLAGS.num_iterations + 1):
                 #Evaluate the relevant information for testing (algorithm output, correct classification, and algorithm accuracy)

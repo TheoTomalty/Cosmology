@@ -110,19 +110,16 @@ def read_file(filename_queue):
     #Each time the line is evaluated in a session at runtime, the reader progresses to the next line.
     
     # Default values, in case of empty columns. Also specifies the type of the decoded result.
-    data_defaults = []
-    # Each line should have one input from each pixel in the 30x30 image as well as
-    # two numbers, [1, 0] or [0, 1], describing the true particle type
-    for i in range(FLAGS.data_size + 1):
-      data_defaults.append([0.0])
+    data_defaults = [[0.0]]*(FLAGS.data_size + FLAGS.label_size)
     
     # Convert a single line, in cvs format, to a list of tf.float tensors with the same size as data_defaults
     data_row = tf.decode_csv(line, record_defaults=data_defaults)
+    
     # Pack pixels tensors together as a single image (and normalize the values)
     datum = tf.pack(data_row[:FLAGS.data_size])
     
     # Pack last two tensors into particle identification (1hot)
-    label = tf.pack(data_row[FLAGS.data_size])
+    label = tf.pack(data_row[FLAGS.data_size:])
     
     #Return the distinct tensors associated with a single-line read of a file
     return datum, label
@@ -155,7 +152,8 @@ def input_pipeline(files, size, num_epochs=None, shuffle=True):
         #Generate a batch with lines and files read in order (File > Line).
         pixel_batch, label_batch = tf.train.batch(
             [datum, label], batch_size=size)
-    #Each batch object is a tensor of shape [$size, ...] where ... represents the shape of the objects it contains (ex. [$size, 2] for labels)
+    
+    #Each batch object is a tensor of shape [$size, ...] where ... represents the shape of the objects it contains (ex. [$size, num_pixels^2])
     return pixel_batch, label_batch
 
 def input(shuffle=True):
@@ -164,52 +162,22 @@ def input(shuffle=True):
     assert len(file_names), "Error: No files listed in your queue"
     
     # Get the input batches
-    pipeline =  input_pipeline(file_names, FLAGS.get_batch_size(), shuffle=shuffle)
+    raw_images, raw_regions = input_pipeline(file_names, FLAGS.get_batch_size(), shuffle=shuffle)
     
     # Reshape the pixels tensor into a square image, '-1 ' indicates that this dimension can be any size (to match the size of the batch)
     # while there is a fourth dimension with a length of '1' to indicate that we are dealing with a black-and-white image rather than a
     # 3-channel colour image.
-    images = tf.reshape(pipeline[0], [-1, FLAGS.num_pixels, FLAGS.num_pixels, 1])
+    images = tf.reshape(raw_images, [-1, FLAGS.num_pixels, FLAGS.num_pixels, 1])
+    regions = tf.reshape(raw_regions, [-1, FLAGS.num_regions, FLAGS.num_regions])
     
-    return images, tf.cast(pipeline[1], tf.bool)
-
-def get_summary_filter(labels, correct, show_worked=True, show_strings=True, show_unstringed=True):
-    '''
-    Reduce a batch of images to a list of images that will be added to the Tensorboard visual output.
-    Filter the images based on string existence and whether or not the algorithm worked on it.
-    Custom filter also available (using more detailed information) in CSalgorithm.py
-    
-    :param labels: The tensor describing the particle type of the image in images
-    :param correct: A tensor of type tf.bool that indicates if the algorithm worked on a particular image in images
-    :return: The boolean-mask type filter to be used on the corresponding batch of images 
-    '''
-    
-    #Ensure that all the tensor sizes match up
-    size = int(correct.get_shape()[0])
-    assert int(labels.get_shape()[0]) == size
-    
-    if show_worked:
-        #Show images where the algorithm worked *in addition* to the ones that didn't (i.e. do not apply a cut here)
-        right_worked = tf.constant(True, dtype=tf.bool, shape=[size])
-    else:
-        #Contruct a boolean mask that only shows images where the algorithm failed.
-        right_worked = tf.logical_not(correct)
-    
-    #Construct a boolean mask that shows electrons if $FLAGS.show_electrons and shows muons if $FLAGS.show_muons
-    show_strings = tf.tile(tf.constant([[show_strings, show_unstringed]], dtype=tf.bool), [size, 1])
-    good_strings = tf.logical_and(show_strings, tf.cast(labels, tf.bool))
-    right_strings = tf.logical_or(tf.reshape(tf.slice(good_strings, [0,0], [size, 1]), [size]), tf.reshape(tf.slice(good_strings, [0,1], [size, 1]), [size]))
-    
-    #Group the filters together. Final mask only shows images that passed each one.
-    show = tf.logical_and(right_worked, right_strings)
-    return show
+    return images, regions
 
 def mask(images, show):
     return tf.boolean_mask(images, show)
 
 def get_summary(images):
     #Construct the summary object that sends the images tensor to Tensorboard for display (displays a maximum of $max_images images)
-    return tf.summary.image("data", images, max_outputs=20)
+    return tf.summary.image("data", images, max_outputs=FLAGS.num_tensorboard)
     
 def write(session, summary):
     # Function to save images in an image summary (from get_summary) to Tensorboard log files

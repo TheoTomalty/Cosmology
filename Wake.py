@@ -2,9 +2,13 @@ from __future__ import division
 import numpy as np
 import math
 import Constants as const
+from Grid import Grid
+
+def plus_minus(x, y):
+    return x + y, x - y
 
 class SimpleWake(object):
-    def __init__(self, angle, phi, theta, total_width, length, orientation):
+    def __init__(self, angle, phi, theta, total_width, length):
         self.angle = angle
         self.phi = phi
         self.theta = theta
@@ -12,9 +16,6 @@ class SimpleWake(object):
         self.total_width = total_width
         self.span = 1*const.deg
         self.smooth = 0.5*const.deg
-        
-        assert abs(orientation) == 1, "The attribute orientation must be +/- 1"
-        self.orientation = orientation
     
     @property
     def slope(self):
@@ -24,15 +25,23 @@ class SimpleWake(object):
     def inverse_slope(self):
         return -1/self.slope
     
-    def linear_coords(self, x, y):
+    @property
+    def line_hat(self):
+        return np.array([np.cos(self.angle), np.sin(self.angle)])
+    
+    @property
+    def rho_hat(self):
+        return np.array([-np.sin(self.angle), np.cos(self.angle)])
+    
+    
+    def linear_coords(self, x):
         # [rho, line] conversion
-        rho = x*math.sin(self.angle) - y*math.cos(self.angle)
-        line = x*math.cos(self.angle) + y*math.sin(self.angle)
+        rho = np.dot(x, self.rho_hat)
+        line = np.dot(x, self.line_hat)
         
         return rho, line
     
     def width(self, rho, line):
-        rho = self.orientation * rho
         line = abs(line)
         if line < self.length/2 - self.smooth:
             scaling = 1
@@ -46,96 +55,43 @@ class SimpleWake(object):
         
         return scaling*(rho + self.span/2)/self.span * self.total_width
     
-    def width_at_pixel(self, x, y, i, j, size):
-        x = x - self.phi + j*size
-        y = y - self.theta + i*size
+    def width_at_pixel(self, x_0, y_0, i, j, step):
+        grid = Grid(step)
+        grid.set_origin(x_0, y_0)
         
-        linear = self.linear_coords(x, y)
-        return 10*const.uK#self.width(*linear)
+        pos = grid.pos(i, j)
+        
+        rho, line = self.linear_coords(pos)
+        return self.width(rho, line)
     
-    def pixelation(self, step):
-        assert 0 < self.angle < math.pi
+    @property
+    def front_edge(self):
+        line_bound = (self.length/2) * self.line_hat
+        rho_bound = (self.span/2) * self.rho_hat
         
-        sign = (1 if self.angle < math.pi/2 else -1)
-        slope = abs(self.slope)
-        inverse_slope = -abs(self.inverse_slope)
-        if sign > 0:
-            angle = self.angle
-        else:
-            angle = math.pi - self.angle
-        
-        side1 = - np.cos(angle) * self.length/2
-        side2 =  abs(np.cos(math.pi/2 - angle) * self.span/2)
-        bottom = slope * side1 - abs(inverse_slope) * side2
-        
-        height_step = step
-        ranges = []
-        while True:
-            left_range1 = - height_step / abs(inverse_slope)
-            left_range2 = height_step / abs(slope) - self.span / np.sin(angle)
-            
-            right_range1 = height_step / abs(slope)
-            right_range2 = -height_step / abs(inverse_slope) + self.length / np.cos(angle)
-            
-            index_left = int(math.ceil(max(left_range1, left_range2) / step))
-            index_right = int(math.floor(min(right_range1, right_range2) / step))
-            
-            if index_left > index_right:
-                break
-            else:
-                height_step += step
-                ranges.append((index_left, index_right))
-        
-        if sign > 0:
-            return self.phi + side1 + side2, self.theta + bottom, ranges
-        
-        inverted_ranges = []
-        for bounds in ranges:
-            inverted_ranges.append((-bounds[1], -bounds[0]))
-        
-        return self.phi - (side1 + side2), self.theta + bottom, inverted_ranges
+        return plus_minus(rho_bound, line_bound)
     
-    def edge_scan(self, x_pixel, y_pixel, size):
-        sign = (-1 if self.angle < np.pi/2 else 1)
-        centre_line = (- sign*np.sin(self.angle) * (self.span/2), sign*np.cos(self.angle) * (self.span/2))
-        centre_index = (int(round((centre_line[0]-x_pixel)/size)), int(round((centre_line[1]-y_pixel)/size)))
-        centre_pixel = (centre_index[0] * size + x_pixel, centre_index[1] * size + y_pixel)
-        print centre_line, centre_index, centre_pixel
+    @property
+    def back_edge(self):
+        line_bound = (self.length/2) * self.line_hat
+        rho_bound = (self.span/2) * self.rho_hat
         
-        s = 0
-        position = centre_line
-        index = centre_index
-        indices = [index]
-        y_line = centre_pixel[1] + 0.5 * size
-        x_line = centre_pixel[0] + 0.5 * size
+        return plus_minus(-rho_bound, line_bound)
+    
+    def pixelation(self, x_0, y_0, step):
+        grid = Grid(step)
+        grid.set_origin(x_0, y_0)
         
-        while s < self.length + self.smooth/2:
-            x_intersect = abs((y_line - position[1])/self.slope)
-            s_x = np.sqrt(x_intersect**2 + (y_line - position[1])**2)
-            y_intersect = abs((x_line - position[0])*self.slope)
-            s_y = np.sqrt(y_intersect**2 + (x_line - position[0])**2)
-            print x_intersect, y_intersect
-            #print s, position, index, y_line, x_line, x_intersect, y_intersect, self.slope
-            
-            if s_x < s_y:
-                s += s_x
-                position = (position[0] + x_intersect, y_line)
-                index = (index[0], index[1] + 1)
-                indices.append(index)
-                y_line += size
-            elif s_y < s_x:
-                s += s_y
-                position = (x_line, position[1] + y_intersect)
-                index = (index[0] - sign, index[1])
-                indices.append(index)
-                x_line += size
-            else:
-                print "WRONG"
-            #print s, position, index, y_line, x_line
+        x_1, x_2 = self.front_edge
+        x_3, x_4 = self.back_edge
         
-        #print indices
+        return grid.pixelate_area(x_1, x_2, x_3, x_4)
+    
+    def edge_scan(self, x_0, y_0, step):
+        grid = Grid(step)
+        grid.set_origin(x_0, y_0)
         
-        return indices
+        return grid.edge_scan(*self.front_edge)
 
 def gamma(v):
     # Reletivistic gamma factor for a velocity v

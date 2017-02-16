@@ -1,10 +1,10 @@
-from DirectoryEmbedded import get_files
-import Constants as const
 import json
-import numpy as np
-import matplotlib.mlab as mlab
-import matplotlib.pyplot as plt
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+import Constants as const
+from algorithm.DirectoryEmbedded import get_files
 
 files = get_files("test_directory/", "final")
 stat_files = get_files("nostrings/", "final")

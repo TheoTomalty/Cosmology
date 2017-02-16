@@ -1,13 +1,16 @@
 from __future__ import division
-from Frame import Frame
-from Frame import Spectrum
-import Constants as const
+
+import getopt
+import json
 import os
 import sys
-import getopt
-from algorithm.CSinput import DirectoryEmbedded
-import json
+
 import numpy as np
+
+import Constants as const
+from Frame import Frame
+from Frame import Spectrum
+from algorithm.DirectoryEmbedded import DirectoryEmbedded
 
 uK = const.uK
 
@@ -16,10 +19,10 @@ class Printer(DirectoryEmbedded):
         DirectoryEmbedded.__init__(self, os.path.join(image_directory))
         
         self.resolution = 1*const.arcmin
-        self.num_pixels = 300
+        self.num_pixels = 75
         
         self.C_EE = Spectrum(
-            [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1100, 4*uK), (3000, 1*uK)]
+            [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1200, 4*uK), (3000, 1*uK)]
         )
         self.C_TT = Spectrum(
             [(2, 30*uK), (30, 30*uK), (100, 70*uK), (700, 40*uK), (3000, 5*uK)]
@@ -32,7 +35,7 @@ class Printer(DirectoryEmbedded):
     def draw(self, exaggerated=False):
         frame = Frame(0, 0., 5*const.deg, 100)
         frame.add_noise(self.C_EE)
-        frame.add_strings(25, int(exaggerated)*100)
+        frame.add_strings(int(exaggerated)*100)
     
     def sphere_decomposition(self):
         latitude_slices = int(round(np.pi / self.size))
@@ -49,12 +52,12 @@ class Printer(DirectoryEmbedded):
         return decomposition
     
     def scale(self, theta):
-        return 3/2 * np.sin(theta)**2
+        return 20#3/2 * np.sin(theta)**2
     
-    def queues(self, train=False):
-        if train:
-            return [[(np.pi/2, i % 1) for i in range(1000)]]
-        
+    def train_queue(self, n):
+        return [[(np.pi/2, 0)]*200]*int(round(n/200))
+    
+    def sphere_queues(self):
         queue = []
         
         for theta, num_images in self.sphere_decomposition():
@@ -64,23 +67,28 @@ class Printer(DirectoryEmbedded):
         
         return [queue[i:i + 200] for i in range(0, len(queue), 200)]
     
-    def print_to_file(self, train=False, string=True):
-        for queue, queue_num in zip(self.queues(train=train), range(1000)):
+    def print_to_file(self, n, train=False, string=True):
+        queues = self.train_queue(n) if train else self.sphere_queues()
+        counter = 0
+        for queue, queue_num in zip(queues, range(1000)):
             with open(self.file('images' + str(queue_num+1) + '.txt'), 'w') as image_file:
                 with open(self.file('info' + str(queue_num+1) + '.txt'), 'w') as info_file:
                     for theta, phi in queue:
                         image = Frame(theta, phi, self.size, self.num_pixels)
                         image.add_noise(self.C_EE)
                         if string:
-                            image.add_strings(25, self.scale(theta))
-                        watermark = ", " + str(int(round(self.scale(theta)/self.scale(np.pi/2))))
+                            image.add_strings(self.scale(theta))
                         
-                        array = np.reshape(image.pixels, [image.num_pixels**2]) / (10 * const.uK)
-                        image_file.write(", ".join(str(x) for x in array) + watermark + '\n')
+                        pixels = np.reshape(image.pixels, [image.num_pixels**2]) / (const.uK)
+                        regions = np.reshape(image.regions, [image.num_regions**2])
+                        image_file.write(", ".join(str(x) for x in pixels) + ", " +
+                                         ", ".join(str(x) for x in regions)+ '\n')
+                        
                         dictionary = {'theta':theta, 'phi':phi, 'scale':self.scale(theta)}
                         info_file.write(json.dumps(dictionary) + "\n")
                         
-                        print "Theta: %d, Phi: %d" %(theta/const.deg, phi/const.deg)
+                        counter += 1
+                        print str(counter) + ": ", "Theta: %d, Phi: %d" %(theta/const.deg, phi/const.deg)
                     
                     print queue_num + 1
 
@@ -88,6 +96,7 @@ if __name__ == "__main__":
     train = False
     directory = ""
     string = True
+    n = 200
     
     try:
         opts, args = getopt.getopt(sys.argv[1:],"n:i:",["train", "nostring"])
@@ -110,4 +119,4 @@ if __name__ == "__main__":
                 directory = arg
     
     p = Printer(directory)
-    p.print_to_file(train=train, string=string)
+    p.print_to_file(n, train=train, string=string)
