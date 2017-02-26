@@ -18,8 +18,8 @@ class Printer(DirectoryEmbedded):
     def __init__(self, image_directory):
         DirectoryEmbedded.__init__(self, os.path.join(image_directory))
         
-        self.resolution = 1*const.arcmin
-        self.num_pixels = 75
+        self.resolution = const.resolution
+        self.num_pixels = const.image_pixel_width
         
         self.C_EE = Spectrum(
             [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1200, 4*uK), (3000, 1*uK)]
@@ -37,33 +37,32 @@ class Printer(DirectoryEmbedded):
         frame.add_noise(self.C_EE)
         frame.add_strings(int(exaggerated)*100)
     
-    def sphere_decomposition(self):
-        latitude_slices = int(round(np.pi / self.size))
-        slice_width = np.pi / latitude_slices
-        
-        decomposition = []
-        for slice in range(latitude_slices):
-            slice_angle = slice_width * (1/2 + slice)
-            slice_length = 2*np.pi * (np.sin(slice_angle - slice_width/2) + np.sin(slice_angle + slice_width/2))/2
-            
-            num_longitude = int(round(slice_length * slice_width / self.size**2))
-            decomposition.append((slice_angle, num_longitude))
-        
-        return decomposition
-    
     def scale(self, theta):
-        return 20#3/2 * np.sin(theta)**2
+        return 3/2 * np.sin(theta)**2
     
     def train_queue(self, n):
         return [[(np.pi/2, 0)]*200]*int(round(n/200))
     
     def sphere_queues(self):
-        queue = []
+        # In south pole coordinates
+        angular_length = 2*np.pi * (11/24)
+        angular_width = 50*const.deg
         
-        for theta, num_images in self.sphere_decomposition():
-            for image_num in range(num_images):
-                phi = 2*np.pi * (image_num/num_images)
-                queue.append((theta, phi))
+        latitude_slices = int(round(angular_width / self.size))
+        slice_width = angular_width / latitude_slices
+        
+        queue = []
+        for slice in range(latitude_slices):
+            theta = slice_width * (1/2 + slice) + 25*const.deg
+            slice_length = angular_length * (np.sin(theta - slice_width/2) + np.sin(theta + slice_width/2))/2
+            
+            num_longitude = int(round(slice_length * slice_width / self.size**2))
+            
+            for image_num in range(num_longitude):
+                phi = angular_length * (image_num/num_longitude)
+                r = np.array([np.sin(theta) * np.sin(phi) , np.cos(theta), np.sin(theta) * np.cos(phi)])
+                # (Theta, Phi) in CMB quadrupole coordinates
+                queue.append((np.arctan(r[2]/np.sqrt(r[0]**2 + r[1]**2)), (np.pi/2 if not r[0] else np.arctan(r[1]/r[0]))))
         
         return [queue[i:i + 200] for i in range(0, len(queue), 200)]
     

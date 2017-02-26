@@ -133,14 +133,11 @@ def process():
                     saver.save(sess)
         else:
             #Testing Protocol
-            tracker = Tracker(["Accuracy"])
+            tracker = Tracker(["scalar", "labels"])
             
-            for file_num in range(1, FLAGS.num_iterations + 1):
-                #Evaluate the relevant information for testing (algorithm output, correct classification, and algorithm accuracy)
-                scalar_value = sess.run(scalar)
-                
+            for file_num in range(1, FLAGS.num_files + 1):
                 #Track and print accuracy for monitoring purposes
-                tracker.save_output(file_num, FLAGS.image_directory, scalar_value)
+                tracker.save_output(file_num, FLAGS.image_directory, *sess.run([scalar, labels]))
         
         #Wrap up
         coord.request_stop()

@@ -111,7 +111,7 @@ class Frame(object):
         self.theta = theta
         self.num_pixels = num_pixels + 20
         self.size = size * (self.num_pixels/num_pixels)
-        self.num_regions = num_pixels/15
+        self.num_regions = num_pixels/const.region_pixel_width
         self.region_width = size/self.num_regions
         
         self.pixels = np.zeros([self.num_pixels, self.num_pixels])

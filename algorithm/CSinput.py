@@ -162,6 +162,7 @@ def input(shuffle=True):
     # Handles all the information input for the network training and testing
     file_names = get_files(FLAGS.image_directory, 'images')
     assert len(file_names), "Error: No files listed in your queue"
+    FLAGS.num_files = len(file_names)
     
     # Get the input batches
     raw_images, raw_regions = input_pipeline(file_names, FLAGS.get_batch_size(), shuffle=shuffle)

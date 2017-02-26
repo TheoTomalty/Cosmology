@@ -32,6 +32,7 @@ class GlobalFlags:
         self.filter_size = 5 # Pixel width of filters used for feature identification. To change this you will need to also modify 
                              # the size of the default filters in get_initial_filters. Preferably an odd number.
         self.images_per_file = 200 
+        self.num_files = None
         self.num_tensorboard = 20
         
         # Variable Parameters

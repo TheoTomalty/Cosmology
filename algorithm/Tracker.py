@@ -50,15 +50,19 @@ class Tracker(object):
             self.reset()
         print string
     
-    def save_output(self, step, directory, tensor):
+    def save_output(self, step, directory, *args):
         info_path = os.path.join(directory, "info" + str(step) + ".txt")
         test_path = os.path.join(directory, "final" + str(step) + ".txt")
+        assert len(args) == len(self.var_names)
+        print step
+        
         with open(info_path, 'r') as file:
             with open(test_path, 'w') as test_file:
-                for line, value in zip(file, tensor):
+                for it in zip(file, *args):
+                    line, value = it[0], it[1:]
                     info = json.loads(line[:-1])
-                    info["value"] = int(value)
-                    print info
+                    for name, val in zip(self.var_names, value):
+                        info[name] = val.tolist()
                     
                     test_file.write(json.dumps(info) + '\n')
                 

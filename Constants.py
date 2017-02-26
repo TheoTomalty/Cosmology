@@ -9,3 +9,8 @@ uK = 1.0e-6 # Kelvin
 
 c_1 = 1
 t_0 = 13.772e9 # years
+
+#Experimental Parameters
+resolution = 1*arcmin
+image_pixel_width = 75
+region_pixel_width = 15
