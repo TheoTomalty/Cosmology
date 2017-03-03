@@ -1,13 +1,12 @@
 from __future__ import division
 import numpy as np
-import math
 import Constants as const
 from Grid import Grid
 
 def plus_minus(x, y):
     return x + y, x - y
 
-class SimpleWake(object):
+class Wake(object):
     def __init__(self, angle, phi, theta, total_width, length):
         self.angle = angle
         self.phi = phi
@@ -122,41 +121,61 @@ def physical(x_c, t):
     # Physical distance associated with comoving distance x_c at time t
     return x_c*a(t)
 
-class String(object):
-    def __init__(self, tension=3e-7):
-        self.tension = tension
-        self.theta = 7*const.deg
-        self.phi = 0*const.deg
-        self.z = 1000.0
-        self.v_s = 0.8 # light-years per year, perpendicular to us
-    
-    @property
-    def t_i(self):
-        return time(self.z)
-    
-    @property
-    def r_c(self):
-        return comoving(1/2*hubble_length(self.t_i), self.t_i)
-
-class Wake(String):
-    def __init__(self, tension=3e-7):
-        String.__init__(self, tension)
-    
-    @property
-    def t_cross(self):
-        return ((3*const.t_0 + self.r_c)/(3*const.t_0**(2/3)))**3
-    
-    @property
-    def dims(self):
-        return const.c_1*hubble_length(self.t_cross), self.t_i*self.v_s*gamma(self.v_s)
-    
-    @property
-    def psi_0(self):
-        return 24*const.pi/5*self.tension*self.v_s*gamma(self.v_s)*const.t_0/(self.z + 1)**(0.5)
-    
-    def height(self, t):
-        return self.psi_0*(self.z + 1)/(redshift(t) + 1)**2
+class WakePlacer(object):
+    def __init__(self, window_size, theta):
+        self.window_size = window_size
+        self.theta = theta
         
-    def width(self, theta, phi):
-        return
+        self.hubble_decomposition = 0.01
+        
+        self.v_gamma_s = 0.15
+        self.G_mu = 1e-7
+    
+    @property
+    def step_factor(self):
+        return (5/2)**(self.hubble_decomposition)
+    
+    @property
+    def solid_angle(self):
+        return  self.window_size**2
+    
+    def N(self, t_i, t):
+        t_i_scaling = const.t_0 / t_i
+        t_scaling = lambda t1: (1 - np.sqrt(a(t1)))**3
+        
+        return (8/3 * self.hubble_decomposition * const.string_formation_density)\
+               * self.solid_angle * t_i_scaling * (t_scaling(t) - t_scaling(self.step_factor*t))
+    
+    def P(self, t_i, t):
+        t_i_scaling = ((redshift(t_i) + 1)/1e3)**3
+        t_scaling = ((redshift(t) + 1)/1e3)**2
+        
+        return const.cmb_quadrupole * const.ionization_fraction(redshift(t)) * self.G_mu * self.v_gamma_s * const.baryon_density_parameter * t_i_scaling * t_scaling * 1e7
+    
+    def hubble_angle(self, t_i, t):
+        return (t_i/const.t_0)**(1/3)/(2 * (1 - (t/const.t_0)**(1/3)))
+    
+    def genetate_strings(self):
+        t_next = lambda t_now: self.step_factor * t_now
+        t = lambda t_now: (t_now + t_next(t_now))/ 2
+        
+        tot_n = 0
+        t_n = time(const.z_last_scatter)
+        while t_next(t_n) < const.t_0:
+            t_i = time(const.z_matter_radiation)
+            while t_next(t_i) < t(t_n):
+                args = (t_i, t(t_n))
+                if self.P(*args)/const.uK > 0.1:
+                    tot_n += self.N(*args)
+                    #print "t_i = %f, t = %f" %args
+                    #print self.N(*args), self.P(*args)/const.uK, self.hubble_angle(*args)/const.deg, "\n"
+                else:
+                    break
+                t_i = t_next(t_i)
+            t_n = t_next(t_n)
+        
+        print tot_n
 
+if __name__ == "__main__":
+    WakePlacer(50*const.deg, 90*const.deg).genetate_strings()
+    #print redshift(5/2*time(const.z_matter_radiation))

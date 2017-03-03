@@ -20,13 +20,6 @@ class Printer(DirectoryEmbedded):
         
         self.resolution = const.resolution
         self.num_pixels = const.image_pixel_width
-        
-        self.C_EE = Spectrum(
-            [(2, 0.2*uK), (10, 0.05*uK), (600, 4*uK), (1200, 4*uK), (3000, 1*uK)]
-        )
-        self.C_TT = Spectrum(
-            [(2, 30*uK), (30, 30*uK), (100, 70*uK), (700, 40*uK), (3000, 5*uK)]
-        )
     
     @property
     def size(self):
@@ -34,7 +27,7 @@ class Printer(DirectoryEmbedded):
     
     def draw(self, exaggerated=False):
         frame = Frame(0, 0., 5*const.deg, 100)
-        frame.add_noise(self.C_EE)
+        frame.add_noise(const.C_EE)
         frame.add_strings(int(exaggerated)*100)
     
     def scale(self, theta):
@@ -74,7 +67,7 @@ class Printer(DirectoryEmbedded):
                 with open(self.file('info' + str(queue_num+1) + '.txt'), 'w') as info_file:
                     for theta, phi in queue:
                         image = Frame(theta, phi, self.size, self.num_pixels)
-                        image.add_noise(self.C_EE)
+                        image.add_noise(const.C_EE)
                         if string:
                             image.add_strings(self.scale(theta))
                         

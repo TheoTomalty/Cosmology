@@ -6,7 +6,7 @@ import Constants as const
 from Grid import Grid
 import Wake as wake
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+from LogLog import LogLog
 
 #TODO: Use better approximation for the spectrum
 #TODO: Implement approximation to spin-weighted spherical harmonics
@@ -34,65 +34,6 @@ def angled_mode(i, j, total):
         return radius, angular_span * radius
     
     return radius, math.pi/2*radius
-
-class Spectrum(object):
-    def __init__(self, nodes=()):
-        ''' Simple class to set up a piecewise liner spectrum in log-log space.
-        
-        # Define the spectrum
-        >>> spec = Spectrum()
-        
-        # Add the nodes
-        >>> spec.append(10, 3)
-        >>> spec.append(100, 5)
-        >>> spec.append(50, 4)
-        
-        # Evaluate Spectrum
-        >>> eval = [spec.eval(x) for x in range(20, 80, 10)]
-        '''
-        self.nodes = []
-        
-        for node in nodes:
-            self.append(*node)
-        
-        self.sort()
-        
-    def sort(self):
-        # Sort by x_value
-        self.nodes = sorted(self.nodes, key=lambda vertex: vertex[0])
-    
-    def append(self, x, y):
-        # Add a point to the spectrum
-        self.nodes.append((float(x), float(y)))
-        self.sort()
-        
-    def delta_T(self, l):
-        ''' Evaluate the power per log interval of wave number $\Delta_T^2 = \frac{l(l+1)C_l}{2\pi}$
-        
-        :param l: Spherical harmonic number
-        :return: Power of modes per log interval in wave number
-        '''
-        l = float(l)
-        assert len(self.nodes) > 0, "No nodes in spectrum"
-        
-        if l < self.nodes[0][0]:
-            return self.nodes[0][1]
-        
-        for node in self.nodes:
-            if l > node[0] and not node[0] == self.nodes[-1][0]:
-                continue
-            
-            end = node
-            start = self.nodes[self.nodes.index(node) - 1]
-            
-            # Linear in log-log between nodes
-            alpha = (
-                math.log(float(start[1]) / float(end[1])) /
-                math.log(float(start[0]) / float(end[0]))
-            )
-            return start[1] * (l/start[0])**alpha
-        
-        raise Exception
 
 class Frame(object):
     def __init__(self, phi, theta, size, num_pixels):
@@ -152,7 +93,7 @@ class Frame(object):
         return np.sum([begin, np.multiply(pixel, index)], axis=0)
     
     def add_noise(self, spectrum):
-        assert isinstance(spectrum, Spectrum)
+        assert isinstance(spectrum, LogLog)
         
         modes = square_complex(self.num_pixels)
         
@@ -169,7 +110,7 @@ class Frame(object):
                 
                 # The amplitude of the i-j mode goes like power per unit solid angle
                 d_log = np.log((l + dl)/(l - dl))
-                power = spectrum.delta_T(l)**2 * d_log/ (4*math.pi * num_modes)
+                power = spectrum.eval(l)**2 * d_log/ (4*math.pi * num_modes)
                 
                 # The power in a given mode is evenly distributed between the real and imaginary parts, hence 1/2 factor
                 random_complex = np.random.randn() + np.random.randn()*1j
@@ -191,7 +132,7 @@ class Frame(object):
             self.add_string(angle, phi, theta, width)
     
     def add_string(self, angle, phi, theta, width):
-        string = wake.SimpleWake(angle, phi, theta, width, 2*const.deg)
+        string = wake.Wake(angle, phi, theta, width, 2*const.deg)
         
         i_centre, j_centre = self.pixel_index(phi, theta)
         grid_centre = self.pixel_pos(i_centre, j_centre)
