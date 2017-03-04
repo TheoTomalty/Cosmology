@@ -120,7 +120,7 @@ class Frame(object):
     
     def add_strings(self, scale=1):
         buffer = 1*const.deg
-        num_strings = int(round((self.size/const.deg)**2))
+        num_strings = int(round(((self.size + buffer)/const.deg)**2))
         
         angles = 2*const.pi * np.random.random(num_strings)
         widths = np.random.normal(scale*0.1*uK, 0.03*uK, num_strings)
@@ -129,10 +129,10 @@ class Frame(object):
         thetas = (self.size + buffer) * (np.random.random(num_strings) - 0.5) + self.theta
         
         for angle, phi, theta, width in zip(angles, phis, thetas, widths):
-            self.add_string(angle, phi, theta, width)
+            self.add_string(angle, phi, theta, width, 1*const.deg)
     
-    def add_string(self, angle, phi, theta, width):
-        string = wake.Wake(angle, phi, theta, width, 2*const.deg)
+    def add_string(self, angle, phi, theta, width, length):
+        string = wake.Wake(phi, theta, angle, width, length)
         
         i_centre, j_centre = self.pixel_index(phi, theta)
         grid_centre = self.pixel_pos(i_centre, j_centre)

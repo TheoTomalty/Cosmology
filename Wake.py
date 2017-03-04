@@ -2,23 +2,30 @@ from __future__ import division
 import numpy as np
 import Constants as const
 from Grid import Grid
+import math
 
 def plus_minus(x, y):
     return x + y, x - y
 
 class Wake(object):
-    def __init__(self, angle, phi, theta, total_width, length):
-        self.angle = angle
+    def __init__(self, phi, theta, orientation, intensity, length):
+        self.orientation = orientation
         self.phi = phi
         self.theta = theta
         self.length = length
-        self.total_width = total_width
-        self.span = 1*const.deg
-        self.smooth = 0.5*const.deg
+        self.intensity = intensity
+
+    @property
+    def span(self):
+        return self.length/2
+    
+    @property
+    def smooth(self):
+        return self.length/4
     
     @property
     def slope(self):
-        return np.tan(self.angle)
+        return np.tan(self.orientation)
     
     @property
     def inverse_slope(self):
@@ -26,11 +33,11 @@ class Wake(object):
     
     @property
     def line_hat(self):
-        return np.array([np.cos(self.angle), np.sin(self.angle)])
+        return np.array([np.cos(self.orientation), np.sin(self.orientation)])
     
     @property
     def rho_hat(self):
-        return np.array([-np.sin(self.angle), np.cos(self.angle)])
+        return np.array([-np.sin(self.orientation), np.cos(self.orientation)])
     
     
     def linear_coords(self, x):
@@ -42,17 +49,17 @@ class Wake(object):
     
     def width(self, rho, line):
         line = abs(line)
-        if line < self.length/2 - self.smooth:
+        if line < self.length/2:
             scaling = 1
-        elif line < self.length/2:
-            scaling = (self.length/2 - line)/self.smooth
+        elif self.length/2 <= line < self.length/2 + self.smooth:
+            scaling = (self.smooth + self.length/2 - line)/self.smooth
         else:
             scaling = 0
         
         if abs(rho) > self.span/2:
             return 0
         
-        return scaling*(rho + self.span/2)/self.span * self.total_width
+        return scaling*(rho + self.span/2)/self.span * self.intensity
     
     def width_at_pixel(self, x_0, y_0, i, j, step):
         grid = Grid(step)
@@ -65,14 +72,14 @@ class Wake(object):
     
     @property
     def front_edge(self):
-        line_bound = (self.length/2) * self.line_hat
+        line_bound = (self.length/2 + self.smooth) * self.line_hat
         rho_bound = (self.span/2) * self.rho_hat
         
         return plus_minus(rho_bound, line_bound)
     
     @property
     def back_edge(self):
-        line_bound = (self.length/2) * self.line_hat
+        line_bound = (self.length/2 + self.smooth) * self.line_hat
         rho_bound = (self.span/2) * self.rho_hat
         
         return plus_minus(-rho_bound, line_bound)
@@ -122,11 +129,13 @@ def physical(x_c, t):
     return x_c*a(t)
 
 class WakePlacer(object):
-    def __init__(self, window_size, theta):
+    def __init__(self, window_size, phi, theta):
         self.window_size = window_size
+        self.phi = phi
         self.theta = theta
         
-        self.hubble_decomposition = 0.01
+        self.hubble_decomposition = 0.1
+        self.intensity_cutoff = 0.1*const.uK
         
         self.v_gamma_s = 0.15
         self.G_mu = 1e-7
@@ -155,27 +164,41 @@ class WakePlacer(object):
     def hubble_angle(self, t_i, t):
         return (t_i/const.t_0)**(1/3)/(2 * (1 - (t/const.t_0)**(1/3)))
     
-    def genetate_strings(self):
+    def place_wakes(self, array, t_i, t):
+        N = self.N(t_i, t)
+        fixed_n = int(math.floor(N))
+        dynamic_n = (1 if np.random.random() < N - fixed_n else 0)
+        
+        for _ in range(fixed_n + dynamic_n):
+            intensity = np.random.normal(0, self.P(t_i, t))
+            length = self.hubble_angle(t_i, t)
+            
+            orientation = 2*const.pi * np.random.random()
+            phi = self.window_size * (np.random.random() - 0.5) + self.phi
+            theta = self.window_size * (np.random.random() - 0.5) + self.theta
+            
+            array.append((phi, theta, orientation, intensity, length))
+    
+    def genetate_wakes(self):
         t_next = lambda t_now: self.step_factor * t_now
         t = lambda t_now: (t_now + t_next(t_now))/ 2
         
-        tot_n = 0
+        wake_list = []
         t_n = time(const.z_last_scatter)
         while t_next(t_n) < const.t_0:
             t_i = time(const.z_matter_radiation)
             while t_next(t_i) < t(t_n):
                 args = (t_i, t(t_n))
-                if self.P(*args)/const.uK > 0.1:
-                    tot_n += self.N(*args)
-                    #print "t_i = %f, t = %f" %args
-                    #print self.N(*args), self.P(*args)/const.uK, self.hubble_angle(*args)/const.deg, "\n"
+                if self.P(*args) > self.intensity_cutoff:
+                    self.place_wakes(wake_list, *args)
                 else:
                     break
                 t_i = t_next(t_i)
             t_n = t_next(t_n)
         
-        print tot_n
+        return wake_list
 
 if __name__ == "__main__":
-    WakePlacer(50*const.deg, 90*const.deg).genetate_strings()
+    wake_list = WakePlacer(50*const.deg, 0, 90*const.deg).genetate_wakes()
+    print len(wake_list)
     #print redshift(5/2*time(const.z_matter_radiation))

@@ -21,10 +21,14 @@ class Analysis(DirectoryEmbedded):
         self.N = 0
         self.sum_x = 0.0
         self.sum_x2 = 0.0
+        
+        self.N_with = 0
+        self.sum_x_with = 0.0
+        self.sum_x2_with = 0.0
     
     @property
     def normalization(self):
-        int_dev2 = self.int_sin4 + (self.int - 2) * self.int_sin2**2
+        int_dev2 = self.int_sin4 - self.int * self.off_centre**2
         
         if int_dev2 == 0:
             return 0
@@ -32,8 +36,12 @@ class Analysis(DirectoryEmbedded):
         return 1/np.sqrt(int_dev2)
     
     @property
+    def off_centre(self):
+        return self.int_sin2/self.int
+    
+    @property
     def Q(self):
-        return self.normalization * (self.int_sin2_x - self.int_sin2 * self.int_x)
+        return self.normalization * (self.int_sin2_x - self.off_centre * self.int_x)
     
     @property
     def Q_err(self):
@@ -55,6 +63,13 @@ class Analysis(DirectoryEmbedded):
     def print_results(self):
         print "Q: %f +/- %f, Area: %d" %(self.Q, self.Q_err, self.int/(const.deg)**2)
     
+    def show_distributions(self):
+        mean_with = self.sum_x_with / self.N_with
+        rms_with = np.sqrt(self.sum_x2_with / self.N_with - mean_with**2)
+        mean_without = self.sum_x / self.N
+        rms_without = np.sqrt(self.sum_x2 / self.N - mean_without**2)
+        print mean_with, rms_with, self.N_with, mean_without, rms_without, self.N
+    
     def add_line(self, line):
         data = json.loads(line)
         
@@ -72,6 +87,10 @@ class Analysis(DirectoryEmbedded):
                 self.N += 1
                 self.sum_x += value
                 self.sum_x2 += value**2
+            else:
+                self.N_with += 1
+                self.sum_x_with += value
+                self.sum_x2_with += value**2
     
     def load_file(self, file_name):
         with open(file_name, 'r') as file:

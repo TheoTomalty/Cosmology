@@ -9,7 +9,6 @@ import numpy as np
 
 import Constants as const
 from Frame import Frame
-from Frame import Spectrum
 from algorithm.DirectoryEmbedded import DirectoryEmbedded
 
 uK = const.uK
@@ -25,11 +24,6 @@ class Printer(DirectoryEmbedded):
     def size(self):
         return self.resolution * self.num_pixels
     
-    def draw(self, exaggerated=False):
-        frame = Frame(0, 0., 5*const.deg, 100)
-        frame.add_noise(const.C_EE)
-        frame.add_strings(int(exaggerated)*100)
-    
     def scale(self, theta):
         return 3/2 * np.sin(theta)**2
     
@@ -39,23 +33,25 @@ class Printer(DirectoryEmbedded):
     def sphere_queues(self):
         # In south pole coordinates
         angular_length = 2*np.pi * (11/24)
-        angular_width = 50*const.deg
-        
-        latitude_slices = int(round(angular_width / self.size))
-        slice_width = angular_width / latitude_slices
+        start_angle = 25*const.deg
         
         queue = []
-        for slice in range(latitude_slices):
-            theta = slice_width * (1/2 + slice) + 25*const.deg
-            slice_length = angular_length * (np.sin(theta - slice_width/2) + np.sin(theta + slice_width/2))/2
+        row, column = 0, 0
+        while len(queue) < 1600:
+            theta = self.size * (1/2 + row) + start_angle
+            row_length = angular_length * np.sin(theta)
+            num_columns = int(round(row_length/self.size))
+            phi = angular_length * ((column+0.5)/num_columns)
             
-            num_longitude = int(round(slice_length * slice_width / self.size**2))
+            r = np.array([np.sin(theta) * np.sin(phi) , np.cos(theta), np.sin(theta) * np.cos(phi)])
+            # (Theta, Phi) in CMB quadrupole coordinates
+            queue.append((np.arctan(r[2]/np.sqrt(r[0]**2 + r[1]**2)), (np.pi/2 if not r[0] else np.arctan(r[1]/r[0]))))
             
-            for image_num in range(num_longitude):
-                phi = angular_length * (image_num/num_longitude)
-                r = np.array([np.sin(theta) * np.sin(phi) , np.cos(theta), np.sin(theta) * np.cos(phi)])
-                # (Theta, Phi) in CMB quadrupole coordinates
-                queue.append((np.arctan(r[2]/np.sqrt(r[0]**2 + r[1]**2)), (np.pi/2 if not r[0] else np.arctan(r[1]/r[0]))))
+            if (column + 1) % num_columns:
+                column += 1
+            else:
+                column = 0
+                row += 1
         
         return [queue[i:i + 200] for i in range(0, len(queue), 200)]
     
@@ -68,8 +64,7 @@ class Printer(DirectoryEmbedded):
                     for theta, phi in queue:
                         image = Frame(theta, phi, self.size, self.num_pixels)
                         image.add_noise(const.C_EE)
-                        if string:
-                            image.add_strings(self.scale(theta))
+                        image.add_strings(int(string)*self.scale(theta))
                         
                         pixels = np.reshape(image.pixels, [image.num_pixels**2]) / (const.uK)
                         regions = np.reshape(image.regions, [image.num_regions**2])
@@ -97,6 +92,7 @@ if __name__ == "__main__":
         sys.exit(2)
     for opt, arg in opts:
         if opt == '-n':
+            train = True
             n = int(arg)
         elif opt == "--train":
             train = True
