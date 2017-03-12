@@ -1,3 +1,4 @@
+from __future__ import division
 import tensorflow as tf
 import math
 
@@ -37,7 +38,7 @@ class GlobalFlags:
         
         # Variable Parameters
         self.average_decay_rate = 0. # Weight used for moving averages of network variables $avg_{i} = 0.995*avg_{i-1} + (1.0 - 0.995)*var_{i}$
-        self.batch_size = 300 # Number of images in a single batch (stochastic method of machine learning)
+        self.batch_size = 100 # Number of images in a single batch (stochastic method of machine learning)
         self.num_angles = 12 # The number of angles for which to create corresponding filters
         self.initial_learning_rate = 0.2 # Step size used by tf.train.AdamOptimizer before decay
         self.decay_rate_per_thousand = 1/math.e # Ratio that learning rate (step size) is reduced in every 1000 batch interval
@@ -93,6 +94,12 @@ FLAGS = GlobalFlags()##
 def conv2d(x, W, padding='VALID'):
     # Convolute a 2D image, x, with a set of filters, W, using one-pixel steps
     return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding=padding)
+
+def gauss_filter(n):
+    array = [[math.exp((x**2 + y**2)/n) for x in range(-n, n + 1)] for y in range(-n, n + 1)]
+    norm = sum([sum(row) for row in array])/(2*n + 1)**2
+    
+    return [[element/norm for element in row] for row in array]
 
 def get_initial_filters(num_angles):
     ''' Generates a set of filters that will be used to initialize the networks so that they 

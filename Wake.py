@@ -156,7 +156,7 @@ class WakePlacer(object):
                * self.solid_angle * t_i_scaling * (t_scaling(t) - t_scaling(self.step_factor*t))
     
     def P(self, t_i, t):
-        t_i_scaling = ((redshift(t_i) + 1)/1e3)**3
+        t_i_scaling = ((redshift(t_i) + 1)/1e3)**(1/2)
         t_scaling = ((redshift(t) + 1)/1e3)**2
         
         return const.cmb_quadrupole * const.ionization_fraction(redshift(t)) * self.G_mu * self.v_gamma_s * const.baryon_density_parameter * t_i_scaling * t_scaling * 1e7

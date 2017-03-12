@@ -190,12 +190,12 @@ def mask(images, show):
 #    
 #    return tf.concat([conv1_images], 0)
 
-def print_tensorboard(session, image_packages):
+def print_tensorboard(session, image_packages, package_names):
     summaries = []
-    for package, i in zip(image_packages, range(100)):
+    for package, pk_name in zip(image_packages, package_names):
         for image_batch, j in zip(package, range(1000)):
             images = np.expand_dims(image_batch, axis=3)
-            name = "conv" + str(i + 1) + "_image" + str(j + 1)
+            name = pk_name + "_image" + str(j + 1)
             summaries.append(get_summary(images, name))
     write(session, summaries)
 

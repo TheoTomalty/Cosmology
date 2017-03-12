@@ -81,7 +81,8 @@ def process():
         
         #Get output of the CNN with images as input
         scalar = CSgraph.network(images)
-        print_conv1, print_conv2 = CSgraph.convolution(images, summary=True)
+        print_image, print_conv1, print_conv2 = CSgraph.convolution(images, summary=True)
+        print_label = tf.expand_dims(labels[:FLAGS.num_tensorboard], axis=1)
         
         #Initialize saver object that takes care of reading and writing parameters to checkpoint files
         saver = CSinput.Saver()
@@ -116,7 +117,15 @@ def process():
             # Iterate over the desired number of batches
             for batch_num in range(1, FLAGS.num_iterations + 1):
                 #Run the training step once and return real-number values for cost and accuracy
-                _, cost_value, acc_value, real_conv1, real_conv2 = sess.run([train_op, cost, accuracy, print_conv1, print_conv2])
+                _, cost_value, acc_value, real_image, real_label, real_conv1, real_conv2 = sess.run([
+                    train_op, 
+                    cost, 
+                    accuracy, 
+                    print_image,
+                    print_label,
+                    print_conv1, 
+                    print_conv2
+                ])
                 #print np.transpose(variable_val, [3, 0, 1, 2])[0]
                 
                 assert not math.isnan(cost_value), 'Model diverged with cost = NaN'
@@ -129,15 +138,26 @@ def process():
                 #Periodically save moving averages to checkpoint files
                 if not batch_num % 50 or batch_num == FLAGS.num_iterations:
                     if FLAGS.print_tensorboard:
-                        CSinput.print_tensorboard(sess, [real_conv1, real_conv2])
+                        CSinput.print_tensorboard(
+                            sess,
+                            [real_image, real_label, real_conv1, real_conv2],
+                            ["image", "label", "conv1", "conv2"]
+                        )
                     saver.save(sess)
         else:
             #Testing Protocol
-            tracker = Tracker(["scalar", "labels"])
+            tracker1 = Tracker(["scalar", "labels"])
+            tracker2 = Tracker(["Cost", "Accuracy"])
+            cost_value, acc_value =  sess.run([cost, accuracy])
             
             for file_num in range(1, FLAGS.num_files + 1):
                 #Track and print accuracy for monitoring purposes
-                tracker.save_output(file_num, FLAGS.image_directory, *sess.run([scalar, labels]))
+                cost_value, acc_value, scal_value, label_value = sess.run([cost, accuracy, scalar, labels])
+                tracker1.save_output(file_num, FLAGS.image_directory, scal_value, label_value)
+                tracker2.add([cost_value, acc_value])
+                
+                tracker2.print_average(file_num)
+                
         
         #Wrap up
         coord.request_stop()

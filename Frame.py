@@ -36,7 +36,7 @@ def angled_mode(i, j, total):
     return radius, math.pi/2*radius
 
 class Frame(object):
-    def __init__(self, phi, theta, size, num_pixels):
+    def __init__(self, theta, phi, size, num_pixels):
         ''' Define the frame for CMB and string visualization.
         
         >>> frame = Frame(const.pi/2, 0., 5*const.deg, 50)
@@ -52,7 +52,7 @@ class Frame(object):
         self.theta = theta
         self.num_pixels = num_pixels + 20
         self.size = size * (self.num_pixels/num_pixels)
-        self.num_regions = num_pixels/const.region_pixel_width
+        self.num_regions = int(num_pixels/const.region_pixel_width)
         self.region_width = size/self.num_regions
         
         self.pixels = np.zeros([self.num_pixels, self.num_pixels])
@@ -123,7 +123,7 @@ class Frame(object):
         num_strings = int(round(((self.size + buffer)/const.deg)**2))
         
         angles = 2*const.pi * np.random.random(num_strings)
-        widths = np.random.normal(scale*0.1*uK, 0.03*uK, num_strings)
+        widths = np.random.normal(scale*4*uK, 0.0001*uK, num_strings)
         
         phis = (self.size + buffer) * (np.random.random(num_strings) - 0.5) + self.phi
         thetas = (self.size + buffer) * (np.random.random(num_strings) - 0.5) + self.theta
@@ -163,11 +163,11 @@ class Frame(object):
         
     
     def draw(self):
-        f = plt.figure(1)
-        plt.imshow(self.regions, interpolation='nearest')
-        f.show()
-        
-        g = plt.figure(2)
+        #f = plt.figure(1)
+        #plt.imshow(self.regions, interpolation='nearest')
+        #f.show()
+        #
+        #g = plt.figure(2)
         plt.imshow(
             np.array([row[10:-10] for row in self.pixels[10:-10]])/uK,
             interpolation='nearest'
@@ -176,8 +176,9 @@ class Frame(object):
         plt.xlabel("Pixel Number")
         plt.ylabel("Pixel Number")
         cbar.ax.set_ylabel('Temperature ($\mu$K)', labelpad=14)
-        g.show()
-        raw_input()
+        plt.savefig('foo.png')
+        #plt.show()
+        #raw_input()
 
 
 if __name__ == "__main__":

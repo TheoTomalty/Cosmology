@@ -63,8 +63,8 @@ class Printer(DirectoryEmbedded):
                 with open(self.file('info' + str(queue_num+1) + '.txt'), 'w') as info_file:
                     for theta, phi in queue:
                         image = Frame(theta, phi, self.size, self.num_pixels)
-                        image.add_noise(const.C_EE)
-                        image.add_strings(int(string)*self.scale(theta))
+                        image.add_noise(const.C_TT)
+                        image.add_strings(int(string))
                         
                         pixels = np.reshape(image.pixels, [image.num_pixels**2]) / (const.uK)
                         regions = np.reshape(image.regions, [image.num_regions**2])
