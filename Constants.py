@@ -15,6 +15,7 @@ z_last_scatter = 1100
 z_matter_radiation = 3600
 baryon_density_parameter = 0.0486
 cmb_quadrupole = 30*uK
+cmb_temp = 2.725
 string_formation_density = 1 # per hubble volume per hubble time
 
 

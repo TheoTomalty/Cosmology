@@ -55,7 +55,7 @@ class Printer(DirectoryEmbedded):
         
         return [queue[i:i + 200] for i in range(0, len(queue), 200)]
     
-    def print_to_file(self, n, train=False, string=True):
+    def print_to_file(self, n, train=False, string=True, mode="temp"):
         queues = self.train_queue(n) if train else self.sphere_queues()
         counter = 0
         for queue, queue_num in zip(queues, range(1000)):
@@ -64,7 +64,9 @@ class Printer(DirectoryEmbedded):
                     for theta, phi in queue:
                         image = Frame(theta, phi, self.size, self.num_pixels)
                         image.add_noise(const.C_TT)
-                        image.add_strings(int(string))
+                        
+                        if string:
+                            image.add_strings(train=train, mode=mode)
                         
                         pixels = np.reshape(image.pixels, [image.num_pixels**2]) / (const.uK)
                         regions = np.reshape(image.regions, [image.num_regions**2])
@@ -84,9 +86,10 @@ if __name__ == "__main__":
     directory = ""
     string = True
     n = 200
+    mode = "temp"
     
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"n:i:",["train", "nostring"])
+        opts, args = getopt.getopt(sys.argv[1:],"n:m:i:",["train", "nostring"])
     except getopt.GetoptError:
         print "Invalid inputs"
         sys.exit(2)
@@ -94,6 +97,8 @@ if __name__ == "__main__":
         if opt == '-n':
             train = True
             n = int(arg)
+        elif opt == '-m':
+            mode = int(arg)
         elif opt == "--train":
             train = True
         elif opt == "--nostring":
@@ -107,4 +112,4 @@ if __name__ == "__main__":
                 directory = arg
     
     p = Printer(directory)
-    p.print_to_file(n, train=train, string=string)
+    p.print_to_file(n, train=train, string=string, mode=mode)

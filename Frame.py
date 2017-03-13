@@ -96,6 +96,7 @@ class Frame(object):
         assert isinstance(spectrum, LogLog)
         
         modes = square_complex(self.num_pixels)
+        inverted_modes = square_complex(self.num_pixels)
         
         for i in range(self.num_pixels):
             for j in range(self.num_pixels):
@@ -110,26 +111,34 @@ class Frame(object):
                 
                 # The amplitude of the i-j mode goes like power per unit solid angle
                 d_log = np.log((l + dl)/(l - dl))
-                power = spectrum.eval(l)**2 * d_log/ (4*math.pi * num_modes)
+                power = spectrum.eval(l)**2 * d_log/ (2 * num_modes)
                 
                 # The power in a given mode is evenly distributed between the real and imaginary parts, hence 1/2 factor
                 random_complex = np.random.randn() + np.random.randn()*1j
+                random_inverted = np.random.randn() + np.random.randn()*1j
                 modes[i][j] += np.sqrt(power/2) * random_complex
+                inverted_modes[i][j] += np.sqrt(power/2) * random_inverted
         
         self.pixels += np.fft.fft2(modes).real + np.fft.fft2(modes).imag
+        self.pixels += np.fft.fft2(inverted_modes).real[:,::-1] + np.fft.fft2(inverted_modes).imag[:,::-1]
     
-    def add_strings(self, scale=1):
+    def add_strings(self, scale=1, train=True, mode="temp"):
         buffer = 1*const.deg
-        num_strings = int(round(((self.size + buffer)/const.deg)**2))
-        
-        angles = 2*const.pi * np.random.random(num_strings)
-        widths = np.random.normal(scale*4*uK, 0.0001*uK, num_strings)
-        
-        phis = (self.size + buffer) * (np.random.random(num_strings) - 0.5) + self.phi
-        thetas = (self.size + buffer) * (np.random.random(num_strings) - 0.5) + self.theta
-        
-        for angle, phi, theta, width in zip(angles, phis, thetas, widths):
-            self.add_string(angle, phi, theta, width, 1*const.deg)
+        if train:
+            num_strings = int(round(((self.size + buffer)/const.deg)**2))
+            
+            angles = 2*const.pi * np.random.random(num_strings)
+            widths = np.random.normal(scale*1.0*uK, 0.0001*uK, num_strings)
+            
+            phis = (self.size + buffer) * (np.random.random(num_strings) - 0.5) + self.phi
+            thetas = (self.size + buffer) * (np.random.random(num_strings) - 0.5) + self.theta
+            
+            for angle, phi, theta, width in zip(angles, phis, thetas, widths):
+                self.add_string(angle, phi, theta, width, 1*const.deg)
+        else:
+            wake_list = wake.WakePlacer(mode, self.size + buffer, self.phi, self.theta).genetate_wakes()
+            for phi, theta, orientation, intensity, length in wake_list:
+                self.add_string(orientation, phi, theta, intensity, length)
     
     def add_string(self, angle, phi, theta, width, length):
         string = wake.Wake(phi, theta, angle, width, length)

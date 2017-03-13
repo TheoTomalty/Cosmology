@@ -129,13 +129,15 @@ def physical(x_c, t):
     return x_c*a(t)
 
 class WakePlacer(object):
-    def __init__(self, window_size, phi, theta):
+    def __init__(self, mode, window_size, phi, theta):
+        self.mode = mode
         self.window_size = window_size
         self.phi = phi
         self.theta = theta
         
-        self.hubble_decomposition = 0.1
-        self.intensity_cutoff = 0.1*const.uK
+        self.hubble_decomposition = 0.01
+        self.intensity_cutoff = 0.005*const.uK
+        self.size_cutoff = 5*const.deg
         
         self.v_gamma_s = 0.15
         self.G_mu = 1e-7
@@ -152,26 +154,30 @@ class WakePlacer(object):
         t_i_scaling = const.t_0 / t_i
         t_scaling = lambda t1: (1 - np.sqrt(a(t1)))**3
         
-        return (8/3 * self.hubble_decomposition * const.string_formation_density)\
+        return (8/3 * (self.hubble_decomposition if self.mode == "pol" else 1) * const.string_formation_density)\
                * self.solid_angle * t_i_scaling * (t_scaling(t) - t_scaling(self.step_factor*t))
     
-    def P(self, t_i, t):
+    def T(self, t_i, t):
         t_i_scaling = ((redshift(t_i) + 1)/1e3)**(1/2)
         t_scaling = ((redshift(t) + 1)/1e3)**2
         
-        return const.cmb_quadrupole * const.ionization_fraction(redshift(t)) * self.G_mu * self.v_gamma_s * const.baryon_density_parameter * t_i_scaling * t_scaling * 1e7
+        if self.mode == "pol":
+            return const.cmb_quadrupole * const.ionization_fraction(redshift(t)) * self.G_mu * self.v_gamma_s * const.baryon_density_parameter * t_i_scaling * t_scaling * 1e7
+        elif self.mode == "temp":
+            return 8 * np.pi * self.G_mu * self.v_gamma_s * const.cmb_temp
     
-    def hubble_angle(self, t_i, t):
+    def W(self, t_i, t):
         return (t_i/const.t_0)**(1/3)/(2 * (1 - (t/const.t_0)**(1/3)))
     
-    def place_wakes(self, array, t_i, t):
+    def add_signals(self, array, t_i, t):
         N = self.N(t_i, t)
         fixed_n = int(math.floor(N))
         dynamic_n = (1 if np.random.random() < N - fixed_n else 0)
         
         for _ in range(fixed_n + dynamic_n):
-            intensity = np.random.normal(0, self.P(t_i, t))
-            length = self.hubble_angle(t_i, t)
+            #intensity = np.random.normal(0, self.P(t_i, t))
+            intensity = self.T(t_i, t)
+            length = self.W(t_i, t)
             
             orientation = 2*const.pi * np.random.random()
             phi = self.window_size * (np.random.random() - 0.5) + self.phi
@@ -183,22 +189,28 @@ class WakePlacer(object):
         t_next = lambda t_now: self.step_factor * t_now
         t = lambda t_now: (t_now + t_next(t_now))/ 2
         
-        wake_list = []
+        signal_list = []
         t_n = time(const.z_last_scatter)
         while t_next(t_n) < const.t_0:
-            t_i = time(const.z_matter_radiation)
-            while t_next(t_i) < t(t_n):
-                args = (t_i, t(t_n))
-                if self.P(*args) > self.intensity_cutoff:
-                    self.place_wakes(wake_list, *args)
-                else:
-                    break
-                t_i = t_next(t_i)
+            if self.mode == "temp":
+                args = (t(t_n), t(t_n))
+                if self.W(*args) < self.size_cutoff:
+                    self.add_signals(signal_list, *args)
+                
+            elif self.mode == "pol":
+                t_i = time(const.z_matter_radiation)
+                while t_next(t_i) < t(t_n):
+                    args = (t_i, t(t_n))
+                    if self.T(*args) > self.intensity_cutoff:
+                        self.add_signals(signal_list, *args)
+                    else:
+                        break
+                    t_i = t_next(t_i)
             t_n = t_next(t_n)
         
-        return wake_list
+        return signal_list
 
 if __name__ == "__main__":
-    wake_list = WakePlacer(50*const.deg, 0, 90*const.deg).genetate_wakes()
-    print len(wake_list)
+    signal_list = WakePlacer(50*const.deg, 0, 90*const.deg).genetate_wakes()
+    print len(signal_list)
     #print redshift(5/2*time(const.z_matter_radiation))
