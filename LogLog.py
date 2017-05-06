@@ -1,7 +1,9 @@
+from __future__ import division
 import numpy as np
+import math
 
 class LogLog(object):
-    def __init__(self, nodes=()):
+    def __init__(self, nodes=(), spacing=None):
         ''' Simple class to set up a piecewise liner plot in log-log space.
         
         # Define the spectrum
@@ -17,11 +19,10 @@ class LogLog(object):
         '''
         
         self.nodes = []
+        self.spacing = spacing
         
         for node in nodes:
             self.append(*node)
-        
-        self.sort()
         
     def sort(self):
         # Sort by x_value
@@ -29,8 +30,7 @@ class LogLog(object):
     
     def append(self, x, y):
         # Add a point to the spectrum
-        self.nodes.append((float(x), float(y)))
-        self.sort()
+        self.nodes.append((x, y))
         
     def eval(self, x):
         ''' Evaluate the power per log interval of wave number $\Delta_T^2 = \frac{l(l+1)C_l}{2\pi}$
@@ -41,21 +41,32 @@ class LogLog(object):
         x = float(x)
         assert len(self.nodes) > 0, "No nodes in spectrum"
         
-        if x < self.nodes[0][0]:
+        if x <= self.nodes[0][0]:
             return self.nodes[0][1]
         
-        for node in self.nodes:
-            if x > node[0] and not node[0] == self.nodes[-1][0]:
-                continue
-            
-            end = node
-            start = self.nodes[self.nodes.index(node) - 1]
-            
-            # Linear in log-log between nodes
-            alpha = (
-                np.log(float(start[1]) / float(end[1])) /
-                np.log(float(start[0]) / float(end[0]))
-            )
-            return start[1] * (x/start[0])**alpha
+        end = None
+        start = None
         
-        raise Exception
+        if self.spacing is None:
+            for node, index in zip(self.nodes, range(len(self.nodes))):
+                if not index:
+                    continue
+                if x < node[0] or index == len(self.nodes) - 1:
+                    end = node
+                    start = self.nodes[index - 1]
+                    break
+        else:
+            low_index = int(math.floor(x/self.spacing) -1)
+            if low_index >= len(self.nodes) - 1:
+                low_index = len(self.nodes) - 2
+            
+            start = self.nodes[low_index]
+            end = self.nodes[low_index + 1]
+            
+            
+        # Linear in log-log between nodes
+        alpha = (
+            (np.log(float(start[1])) - np.log(float(end[1]))) /
+            np.log(float(start[0]) / float(end[0]))
+        )
+        return start[1] * (x/start[0])**alpha

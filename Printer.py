@@ -63,7 +63,10 @@ class Printer(DirectoryEmbedded):
                 with open(self.file('info' + str(queue_num+1) + '.txt'), 'w') as info_file:
                     for theta, phi in queue:
                         image = Frame(theta, phi, self.size, self.num_pixels)
-                        image.add_noise(const.C_TT)
+                        if mode == "temp":
+                            image.add_noise(const.C_TT)
+                        elif mode == "pol":
+                            image.add_noise(const.C_EB)
                         
                         if string:
                             image.add_strings(train=train, mode=mode)
@@ -98,7 +101,7 @@ if __name__ == "__main__":
             train = True
             n = int(arg)
         elif opt == '-m':
-            mode = int(arg)
+            mode = arg
         elif opt == "--train":
             train = True
         elif opt == "--nostring":

@@ -92,7 +92,7 @@ def flatten_image(images):
     amount_y = h.conv2d(images, sobel_y, padding='SAME') / tf.reduce_sum(sobel_y * smooth_y)
     remove_y = - h.conv2d(amount_y, smooth_y) / FLAGS.filter_size**2
     
-    return images[:, 2:-2, 2:-2, :] - remove_flat - remove_x - remove_y
+    return images[:, 2:-2, 2:-2, :] - remove_flat - remove_x - remove_y, images[:, 2:-2, 2:-2, :] - remove_flat, images[:, 2:-2, 2:-2, :] - remove_flat - remove_x
 
 def laplace(images):
     pooling_size = 5
@@ -118,8 +118,12 @@ def laplace(images):
     
 
 def convolution(images, summary=None):
-    images = flatten_image(images)
     image_board = tf.transpose(images[:FLAGS.num_tensorboard], [0, 3, 1, 2])
+    images, imgc, imgcx = flatten_image(images)
+    
+    flat_board = tf.transpose(images[:FLAGS.num_tensorboard], [0, 3, 1, 2])
+    const_board = tf.transpose(imgc[:FLAGS.num_tensorboard], [0, 3, 1, 2])
+    constx_board = tf.transpose(imgcx[:FLAGS.num_tensorboard], [0, 3, 1, 2])
     
     with tf.variable_scope('vars', reuse=summary):
         #Initial filters include straight edges and straight lines of different angles
@@ -174,9 +178,10 @@ def convolution(images, summary=None):
                 ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID'
             )
             conv2_board = tf.transpose(h_conv2[:FLAGS.num_tensorboard], [0, 3, 1, 2])
+            pool_board = tf.transpose(h_pool2[:FLAGS.num_tensorboard], [0, 3, 1, 2])
             
             if summary is not None:
-                return image_board, conv1_board, conv2_board
+                return image_board, flat_board, const_board, constx_board, conv1_board, conv2_board, pool_board
         
         return h_pool2
 

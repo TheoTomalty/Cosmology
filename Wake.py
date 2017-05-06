@@ -59,6 +59,7 @@ class Wake(object):
         if abs(rho) > self.span/2:
             return 0
         
+        #return scaling*(0.5 if rho>0 else -0.5) * self.intensity
         return scaling*(rho + self.span/2)/self.span * self.intensity
     
     def width_at_pixel(self, x_0, y_0, i, j, step):
@@ -136,11 +137,11 @@ class WakePlacer(object):
         self.theta = theta
         
         self.hubble_decomposition = 0.01
-        self.intensity_cutoff = 0.005*const.uK
+        self.intensity_cutoff = 0.001*const.uK
         self.size_cutoff = 5*const.deg
         
         self.v_gamma_s = 0.15
-        self.G_mu = 1e-7
+        self.G_mu = 8e-8
     
     @property
     def step_factor(self):
@@ -152,10 +153,11 @@ class WakePlacer(object):
     
     def N(self, t_i, t):
         t_i_scaling = const.t_0 / t_i
+        t_begin = (2/(1+self.step_factor))*t
         t_scaling = lambda t1: (1 - np.sqrt(a(t1)))**3
         
         return (8/3 * (self.hubble_decomposition if self.mode == "pol" else 1) * const.string_formation_density)\
-               * self.solid_angle * t_i_scaling * (t_scaling(t) - t_scaling(self.step_factor*t))
+               * self.solid_angle * t_i_scaling * (t_scaling(t_begin) - t_scaling(self.step_factor*t_begin))
     
     def T(self, t_i, t):
         t_i_scaling = ((redshift(t_i) + 1)/1e3)**(1/2)
@@ -176,7 +178,7 @@ class WakePlacer(object):
         
         for _ in range(fixed_n + dynamic_n):
             #intensity = np.random.normal(0, self.P(t_i, t))
-            intensity = self.T(t_i, t)
+            intensity = np.random.random() * self.T(t_i, t)
             length = self.W(t_i, t)
             
             orientation = 2*const.pi * np.random.random()
@@ -210,7 +212,7 @@ class WakePlacer(object):
         
         return signal_list
 
-if __name__ == "__main__":
-    signal_list = WakePlacer(50*const.deg, 0, 90*const.deg).genetate_wakes()
-    print len(signal_list)
+#if __name__ == "__main__":
+    #signal_list = WakePlacer(50*const.deg, 0, 90*const.deg).genetate_wakes()
+    #print len(signal_list)
     #print redshift(5/2*time(const.z_matter_radiation))

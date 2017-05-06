@@ -81,7 +81,7 @@ def process():
         
         #Get output of the CNN with images as input
         scalar = CSgraph.network(images)
-        print_image, print_conv1, print_conv2 = CSgraph.convolution(images, summary=True)
+        print_image, print_flat, print_const, print_constx, print_conv1, print_conv2, print_pool = CSgraph.convolution(images, summary=True)
         print_label = tf.expand_dims(labels[:FLAGS.num_tensorboard], axis=1)
         
         #Initialize saver object that takes care of reading and writing parameters to checkpoint files
@@ -117,14 +117,18 @@ def process():
             # Iterate over the desired number of batches
             for batch_num in range(1, FLAGS.num_iterations + 1):
                 #Run the training step once and return real-number values for cost and accuracy
-                _, cost_value, acc_value, real_image, real_label, real_conv1, real_conv2 = sess.run([
+                _, cost_value, acc_value, real_image, real_flat, real_const, real_constx, real_label, real_conv1, real_conv2, real_pool = sess.run([
                     train_op, 
                     cost, 
                     accuracy, 
                     print_image,
+                    print_flat,
+                    print_const,
+                    print_constx,
                     print_label,
                     print_conv1, 
-                    print_conv2
+                    print_conv2,
+                    print_pool
                 ])
                 #print np.transpose(variable_val, [3, 0, 1, 2])[0]
                 
@@ -140,8 +144,8 @@ def process():
                     if FLAGS.print_tensorboard:
                         CSinput.print_tensorboard(
                             sess,
-                            [real_image, real_label, real_conv1, real_conv2],
-                            ["image", "label", "conv1", "conv2"]
+                            [real_image, real_flat, real_const, real_constx, real_label, real_conv1, real_conv2, real_pool],
+                            ["image", "flat", "const", "constx", "label", "conv1", "conv2", "pool"]
                         )
                     saver.save(sess)
         else:

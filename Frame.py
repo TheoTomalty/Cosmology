@@ -111,7 +111,7 @@ class Frame(object):
                 
                 # The amplitude of the i-j mode goes like power per unit solid angle
                 d_log = np.log((l + dl)/(l - dl))
-                power = spectrum.eval(l)**2 * d_log/ (2 * num_modes)
+                power = (spectrum.eval(l)*const.uK)**2 * d_log/ (2 * num_modes)
                 
                 # The power in a given mode is evenly distributed between the real and imaginary parts, hence 1/2 factor
                 random_complex = np.random.randn() + np.random.randn()*1j
@@ -128,7 +128,7 @@ class Frame(object):
             num_strings = int(round(((self.size + buffer)/const.deg)**2))
             
             angles = 2*const.pi * np.random.random(num_strings)
-            widths = np.random.normal(scale*1.0*uK, 0.0001*uK, num_strings)
+            widths = np.random.normal(scale*0.08*uK, 0.0001*uK, num_strings)
             
             phis = (self.size + buffer) * (np.random.random(num_strings) - 0.5) + self.phi
             thetas = (self.size + buffer) * (np.random.random(num_strings) - 0.5) + self.theta
@@ -182,9 +182,12 @@ class Frame(object):
             interpolation='nearest'
         )
         cbar = plt.colorbar()
-        plt.xlabel("Pixel Number")
-        plt.ylabel("Pixel Number")
-        cbar.ax.set_ylabel('Temperature ($\mu$K)', labelpad=14)
+        plt.xlabel("Pixel Number", fontsize=20)
+        plt.ylabel("Pixel Number", fontsize=20)
+        #img.ax.set_ylabel('Pixel Number', fontsize=40)
+        cbar.ax.set_ylabel('Temperature ($\mu$K)', labelpad=14, fontsize=20)
+        
+        plt.tight_layout()
         plt.savefig('foo.png')
         #plt.show()
         #raw_input()

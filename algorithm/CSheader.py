@@ -34,7 +34,7 @@ class GlobalFlags:
                              # the size of the default filters in get_initial_filters. Preferably an odd number.
         self.images_per_file = 200 
         self.num_files = None
-        self.num_tensorboard = 20
+        self.num_tensorboard = 10
         
         # Variable Parameters
         self.average_decay_rate = 0. # Weight used for moving averages of network variables $avg_{i} = 0.995*avg_{i-1} + (1.0 - 0.995)*var_{i}$
