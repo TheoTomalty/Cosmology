@@ -1,55 +1,14 @@
 import tensorflow as tf
+import numpy as np
 import CSheader as h
 import os
 import json
 from shutil import move
 from os import remove
+from DirectoryEmbedded import *
+#import CSgraph
 
 FLAGS = h.FLAGS
-
-class DirectoryEmbedded(object):
-    ''' Simple class that facilitates working within a (possibly previously non-existent) directory. '''
-    def __init__(self, directory):
-        ''' Initialize the object with the desired directory.
-        
-        :param directory: Directory to work in. If non-existent it will be created.
-        '''
-        
-        self.directory = directory
-        self.update()
-        
-    def is_current(self, directory):
-        #Check if the directory is an empty string, meaning you are working in the directory from which python was run.
-        return directory == ""
-    
-    def update(self, directory=None):
-        ''' Set a given directory as the one used by class, create it if non-existent. 
-        
-        :param directory: Directory to initialize, if none is given initialize the directory already in use by class.
-        '''
-        
-        #If no directory is given, use the one already saved in class.
-        if directory is None:
-            directory = self.directory
-        #Check if directory needs to be created
-        if not self.is_current(directory) and not os.path.exists(directory):
-            #Create directory
-            os.makedirs(directory)
-            #Check that it was created successfully
-            assert os.path.exists(directory), "Failed to create directory: " + directory
-        #Save the directory name in class attribute "directory"
-        self.directory = directory
-    
-    def file(self, file_name):
-        ''' Path generation for files in the initialized directory.
-        
-        :param file_name: Name of file without path information
-        :return: Path of hypothetical file of the name file_name in the directory self.directory
-        '''
-        
-        if self.is_current(self.directory):
-            return file_name
-        return os.path.join(self.directory, file_name)
 
 class Saver(DirectoryEmbedded):
     ''' Custom class that is responsible for saving and loading network parameters in/from checkpoint files. '''
@@ -129,7 +88,7 @@ class ParameterReadWrite(object):
             for line in f:
                 # Return the JSON-parsed line (removing the newline character if necessary)
                 if line[-1] == "\n":
-                    print "Warning: may be multiple dictionaries in \"" + self.parameter_file + "\", whereas only the first is loaded."
+                    print("Warning: may be multiple dictionaries in \"" + self.parameter_file + "\", whereas only the first is loaded.")
                     return json.loads(line[:-1])
                 return json.loads(line)
     
@@ -153,19 +112,16 @@ def read_file(filename_queue):
     #Each time the line is evaluated in a session at runtime, the reader progresses to the next line.
     
     # Default values, in case of empty columns. Also specifies the type of the decoded result.
-    data_defaults = []
-    # Each line should have one input from each pixel in the 30x30 image as well as
-    # two numbers, [1, 0] or [0, 1], describing the true particle type
-    for i in range(FLAGS.data_size + 2):
-      data_defaults.append([0.0])
+    data_defaults = [[0.0]]*(FLAGS.data_size + FLAGS.label_size)
     
     # Convert a single line, in cvs format, to a list of tf.float tensors with the same size as data_defaults
     data_row = tf.decode_csv(line, record_defaults=data_defaults)
+    
     # Pack pixels tensors together as a single image (and normalize the values)
-    datum = tf.pack(data_row[:FLAGS.data_size])
+    datum = tf.stack(data_row[:FLAGS.data_size])
     
     # Pack last two tensors into particle identification (1hot)
-    label = tf.pack(data_row[FLAGS.data_size:FLAGS.data_size+2])
+    label = tf.stack(data_row[FLAGS.data_size:])
     
     #Return the distinct tensors associated with a single-line read of a file
     return datum, label
@@ -185,7 +141,7 @@ def input_pipeline(files, size, num_epochs=None, shuffle=True):
     filename_queue = tf.train.string_input_producer(
           files, num_epochs=num_epochs, shuffle=shuffle)
     #Initialize tensors associated with a single line-read of the file queue
-    datum,  label = read_file(filename_queue)
+    datum, label = read_file(filename_queue)
     #Large capacity for better shuffling
     capacity = FLAGS.min_after_dequeue + 3 * size
     #Send the single-line read operation into a Tensorflow batch object that calls it $size times in succession (with possible shuffing)
@@ -198,90 +154,56 @@ def input_pipeline(files, size, num_epochs=None, shuffle=True):
         #Generate a batch with lines and files read in order (File > Line).
         pixel_batch, label_batch = tf.train.batch(
             [datum, label], batch_size=size)
-    #Each batch object is a tensor of shape [$size, ...] where ... represents the shape of the objects it contains (ex. [$size, 2] for labels)
+    
+    #Each batch object is a tensor of shape [$size, ...] where ... represents the shape of the objects it contains (ex. [$size, num_pixels^2])
     return pixel_batch, label_batch
-
-def get_files(name, extension="txt"):
-    '''
-    Easy Generation of the list of files to use in the algorithm.
-    Assumes format where the FLAGS.image_directory containing 
-    files called "name1.txt", "name2.txt" etc.
-    
-    :param name: A string representing the prefix of the files in a given directory (ex. 'info' for "info1.txt", "info2.txt", etc.)
-    :param extension: Optional extension if not a plain text file
-    :return: The list of files with that name prefix
-    '''
-    
-    file_names = []
-    file_num = 1
-    while file_num:
-        #The path of the $name$file_num.txt file in the image directory
-        file_name = os.path.join(FLAGS.image_directory, name + str(file_num) + '.' + extension)
-        #Add the file to filenames if it exists, break the loop if not since there will be no more files of this type
-        if os.path.isfile(file_name):
-            file_names.append(file_name)
-            file_num += 1
-        else:
-            # End of Loop
-            file_num = 0
-    
-    return file_names
 
 def input(shuffle=True):
     # Handles all the information input for the network training and testing
-    file_names = get_files('images')
+    file_names = get_files(FLAGS.image_directory, 'images')
     assert len(file_names), "Error: No files listed in your queue"
+    FLAGS.num_files = len(file_names)
     
     # Get the input batches
-    pipeline =  input_pipeline(file_names, FLAGS.get_batch_size(), shuffle=shuffle)
+    raw_images, raw_regions = input_pipeline(file_names, FLAGS.get_batch_size(), shuffle=shuffle)
     
     # Reshape the pixels tensor into a square image, '-1 ' indicates that this dimension can be any size (to match the size of the batch)
     # while there is a fourth dimension with a length of '1' to indicate that we are dealing with a black-and-white image rather than a
     # 3-channel colour image.
-    images = tf.reshape(pipeline[0], [-1, FLAGS.num_pixels, FLAGS.num_pixels, 1])
-    _, indicator = tf.unstack(pipeline[1], axis=1)
+    images = tf.reshape(raw_images, [-1, FLAGS.num_pixels, FLAGS.num_pixels, 1])
+    regions = tf.reshape(raw_regions, [-1, FLAGS.num_regions, FLAGS.num_regions])
     
-    return images, tf.cast(indicator, tf.bool)
-
-def get_summary_filter(labels, correct, show_worked=True, show_strings=True, show_unstringed=True):
-    '''
-    Reduce a batch of images to a list of images that will be added to the Tensorboard visual output.
-    Filter the images based on string existence and whether or not the algorithm worked on it.
-    Custom filter also available (using more detailed information) in CSalgorithm.py
-    
-    :param labels: The tensor describing the particle type of the image in images
-    :param correct: A tensor of type tf.bool that indicates if the algorithm worked on a particular image in images
-    :return: The boolean-mask type filter to be used on the corresponding batch of images 
-    '''
-    
-    #Ensure that all the tensor sizes match up
-    size = int(correct.get_shape()[0])
-    assert int(labels.get_shape()[0]) == size
-    
-    if show_worked:
-        #Show images where the algorithm worked *in addition* to the ones that didn't (i.e. do not apply a cut here)
-        right_worked = tf.constant(True, dtype=tf.bool, shape=[size])
-    else:
-        #Contruct a boolean mask that only shows images where the algorithm failed.
-        right_worked = tf.logical_not(correct)
-    
-    #Construct a boolean mask that shows electrons if $FLAGS.show_electrons and shows muons if $FLAGS.show_muons
-    show_strings = tf.tile(tf.constant([[show_strings, show_unstringed]], dtype=tf.bool), [size, 1])
-    good_strings = tf.logical_and(show_strings, tf.cast(labels, tf.bool))
-    right_strings = tf.logical_or(tf.reshape(tf.slice(good_strings, [0,0], [size, 1]), [size]), tf.reshape(tf.slice(good_strings, [0,1], [size, 1]), [size]))
-    
-    #Group the filters together. Final mask only shows images that passed each one.
-    show = tf.logical_and(right_worked, right_strings)
-    return show
+    return images, regions
 
 def mask(images, show):
     return tf.boolean_mask(images, show)
 
-def get_summary(images):
+#def pack_tensorboard(images):
+#    conv1_images = tf.transpose(
+#        CSgraph.first_convolution(images)[:FLAGS.num_tensorboard],
+#        [3, 0, 1, 2]
+#    )
+#    #conv2_images = tf.transpose(
+#    #    CSgraph.second_convolution(images)[:FLAGS.num_tensorboard],
+#    #    [3, 0, 1, 2]
+#    #)
+#    
+#    return tf.concat([conv1_images], 0)
+
+def print_tensorboard(session, image_packages, package_names):
+    summaries = []
+    for package, pk_name in zip(image_packages, package_names):
+        for image_batch, j in zip(package, range(1000)):
+            images = np.expand_dims(image_batch, axis=3)
+            name = pk_name + "_image" + str(j + 1)
+            summaries.append(get_summary(images, name))
+    write(session, summaries)
+
+def get_summary(images, name):
     #Construct the summary object that sends the images tensor to Tensorboard for display (displays a maximum of $max_images images)
-    return tf.summary.image("data", images, max_outputs=20)
+    return tf.summary.image(name, images, max_outputs=FLAGS.num_tensorboard)
     
-def write(session, summary):
+def write(session, summaries):
     # Function to save images in an image summary (from get_summary) to Tensorboard log files
     logdir = '/tmp/logs' # Standard directory to save the display images in Tensorboard format
     
@@ -292,7 +214,8 @@ def write(session, summary):
         if f.startswith("events.out.tfevents."):
             remove(os.path.join(logdir, f))
         else:
-            print "Unexpected file in logdir: " + f
+            print("Unexpected file in logdir: " + f)
     # Write summary object
     writer = tf.summary.FileWriter(logdir, session.graph)
-    writer.add_summary(session.run(summary), 0)
+    for summary in summaries:
+        writer.add_summary(session.run(summary), 0)

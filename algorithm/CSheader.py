@@ -1,3 +1,4 @@
+from __future__ import division
 import tensorflow as tf
 import math
 
@@ -26,17 +27,20 @@ class GlobalFlags:
         self.print_tensorboard = False # Use with <self.training = 0> to save images into logs that can be seen using Tensorboard
         
         # Fixed Parameters
-        self.num_pixels = 100 # Width of square input images to network, in number of pixels. Image is num_pixels x num_pixels in total.
-        self.min_after_dequeue = 200 # Quantity used for shuffling batches. Higher = better randomization but slower processing speed.
+        self.num_pixels = 95 # Width of square input images to network, in number of pixels. Image is num_pixels x num_pixels in total.
+        self.num_regions = 5
+        self.min_after_dequeue = 1000 # Quantity used for shuffling batches. Higher = better randomization but slower processing speed.
         self.filter_size = 5 # Pixel width of filters used for feature identification. To change this you will need to also modify 
                              # the size of the default filters in get_initial_filters. Preferably an odd number.
-        self.images_per_file = 1000 
+        self.images_per_file = 200 
+        self.num_files = None
+        self.num_tensorboard = 10
         
         # Variable Parameters
         self.average_decay_rate = 0. # Weight used for moving averages of network variables $avg_{i} = 0.995*avg_{i-1} + (1.0 - 0.995)*var_{i}$
-        self.batch_size = 50 # Number of images in a single batch (stochastic method of machine learning)
-        self.num_angles = 10 # The number of angles for which to create corresponding filters
-        self.initial_learning_rate = 0.08 # Step size used by tf.train.AdamOptimizer before decay
+        self.batch_size = 100 # Number of images in a single batch (stochastic method of machine learning)
+        self.num_angles = 12 # The number of angles for which to create corresponding filters
+        self.initial_learning_rate = 0.02 # Step size used by tf.train.AdamOptimizer before decay
         self.decay_rate_per_thousand = 1/math.e # Ratio that learning rate (step size) is reduced in every 1000 batch interval
     
     def set_parameters(self, parameters):
@@ -56,6 +60,10 @@ class GlobalFlags:
     def data_size(self):
         # Number of input variables to a given network, number of pixels in the square images of rings
         return self.num_pixels**2
+    
+    @property
+    def label_size(self):
+        return self.num_regions**2
     
     @property
     def num_iterations(self):
@@ -83,9 +91,15 @@ FLAGS = GlobalFlags()##
 ######################################################
 
 
-def conv2d(x, W):
+def conv2d(x, W, padding='VALID'):
     # Convolute a 2D image, x, with a set of filters, W, using one-pixel steps
-    return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
+    return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding=padding)
+
+def gauss_filter(n):
+    array = [[math.exp((x**2 + y**2)/n) for x in range(-n, n + 1)] for y in range(-n, n + 1)]
+    norm = sum([sum(row) for row in array])/(2*n + 1)**2
+    
+    return [[element/norm for element in row] for row in array]
 
 def get_initial_filters(num_angles):
     ''' Generates a set of filters that will be used to initialize the networks so that they 
@@ -104,14 +118,20 @@ def get_initial_filters(num_angles):
     num_filters = num_angles
     
     # Smooth vertical edge set to correspond with an electron ring
-    initial_edge = [[-1., -1., 1., 0.5, 0.5],
-                  [-1., -1., 1., 0.5, 0.5],
-                  [-1., -1., 1., 0.5, 0.5],
-                  [-1., -1., 1., 0.5, 0.5],
-                  [-1., -1., 1., 0.5, 0.5]]
+    initial_edge = [[0., -1., 1., 0., 0.],
+                  [0., -1., 1., 0., 0.],
+                  [0., -1., 1., 0., 0.],
+                  [0., -1., 1., 0., 0.],
+                  [0., -1., 1., 0., 0.]]
+    initial_line = [[-0.25, -0.25, 1., -0.25, -0.25],
+                  [-0.25, -0.25, 1., -0.25, -0.25,],
+                  [-0.25, -0.25, 1., -0.25, -0.25,],
+                  [-0.25, -0.25, 1., -0.25, -0.25,],
+                  [-0.25, -0.25, 1., -0.25, -0.25,]]
     
     
-    initial_filters = []
+    conv1_filters = []
+    conv2_filters = []
     base_rotation = 2*math.pi/num_angles # Angle between each edge filter
     
     # Crudely rotate both vertical filters (defined above) to fill each angle with num_angles in a 2*pi rotation
@@ -119,7 +139,8 @@ def get_initial_filters(num_angles):
         filter_angle = angle_num * base_rotation
         
         # Setup filter_size x filter_size filter with None in each pixel
-        filter_rot = [[None for x_0 in range(filter_size)] for y_0 in range(filter_size)]
+        edge_rot = [[None for x_0 in range(filter_size)] for y_0 in range(filter_size)]
+        line_rot = [[None for x_0 in range(filter_size)] for y_0 in range(filter_size)]
         
         # Set each pixel weight in vertical filters to closest rotated conterpart
         for i in range(filter_size):
@@ -136,33 +157,54 @@ def get_initial_filters(num_angles):
                 j_rot = int(round(y_rot)) + 2
                 if (i_rot in range(filter_size) and j_rot in range(filter_size)):
                     # If pixel index is in range of the filter (i.e. not rotated outside filter) set rotated pixel to value of non-rotated pixel weight
-                    filter_rot[j_rot][i_rot] = initial_edge[j][i]
+                    edge_rot[j_rot][i_rot] = initial_edge[j][i]
+                    line_rot[j_rot][i_rot] = initial_line[j][i]
+        
         
         # Search for pixels that were not touched using the above method and set their values to the average of nearby pixel weights.
         for i in range(filter_size):
             for j in range(filter_size):
                 # Check if pixel has None value which means it was not set using above method
-                if (filter_rot[j][i] == None):
+                if (edge_rot[j][i] == None):
                     num = 0
                     sum = 0.
-                    if (j and filter_rot[j-1][i] != None):
+                    if (j and edge_rot[j-1][i] != None):
                         # Add to average if pixel has j-1 neighbor and neighbor has value
                         num += 1
-                        sum += filter_rot[j-1][i]
-                    if (i and filter_rot[j][i-1] != None):
+                        sum += edge_rot[j-1][i]
+                    if (i and edge_rot[j][i-1] != None):
                         num += 1
-                        sum += filter_rot[j][i-1]
-                    if (j < 4 and filter_rot[j+1][i] != None):
+                        sum += edge_rot[j][i-1]
+                    if (j < 4 and edge_rot[j+1][i] != None):
                         num += 1
-                        sum += filter_rot[j+1][i]
-                    if (i < 4 and filter_rot[j][i+1] != None):
+                        sum += edge_rot[j+1][i]
+                    if (i < 4 and edge_rot[j][i+1] != None):
                         num += 1
-                        sum += filter_rot[j][i+1]
+                        sum += edge_rot[j][i+1]
                     # Set the pixel weight to the average of the adjacent weights
-                    filter_rot[j][i] = sum / num
+                    edge_rot[j][i] = sum / num
+                if (line_rot[j][i] == None):
+                    num = 0
+                    sum = 0.
+                    if (j and line_rot[j-1][i] != None):
+                        # Add to average if pixel has j-1 neighbor and neighbor has value
+                        num += 1
+                        sum += line_rot[j-1][i]
+                    if (i and line_rot[j][i-1] != None):
+                        num += 1
+                        sum += line_rot[j][i-1]
+                    if (j < 4 and line_rot[j+1][i] != None):
+                        num += 1
+                        sum += line_rot[j+1][i]
+                    if (i < 4 and line_rot[j][i+1] != None):
+                        num += 1
+                        sum += line_rot[j][i+1]
+                    # Set the pixel weight to the average of the adjacent weights
+                    line_rot[j][i] = sum / num
         
         # Attach both, complete, filters to the list of filters that will later be returned by this function
-        initial_filters.append(filter_rot)
+        conv1_filters.append(edge_rot)
+        conv2_filters.append(line_rot)
         
     # Return complete list of filters with total number that were used
-    return initial_filters, num_filters
+    return conv1_filters, conv2_filters, num_filters

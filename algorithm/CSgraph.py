@@ -1,69 +1,190 @@
 import tensorflow as tf
 import CSheader as h
+import os
+import json
 
 FLAGS = h.FLAGS
 
-#TODO: Normalize filters
-#TODO: Add neighbouring angles in second convolution (useful for curved strings)
+def set_zero_edges(conv, size, remove):
+    bulk = tf.ones([FLAGS.get_batch_size(), size - 2*remove, size - 2*remove, FLAGS.num_angles])
+    
+    cut = tf.pad(bulk, [[0, 0], [remove, remove], [remove, remove], [0, 0]])
+    
+    return conv * cut
 
-class Tracker(object):
-    ''' Simple class to keep track of value averages during training.
-        Use tracker.add() to input values in each batch and print_average
-        to return the average values, after some number of steps, and
-        reset the variables.
+def normalize_filters(weights, num_in, num_out, grad=False):
+    sobel = tf.constant([
+        [1.,  2., 0.,  -2., -1.],
+        [4.,  8., 0.,  -8., -4.],
+        [6., 12., 0., -12., -6.],
+        [4.,  8., 0.,  -8., -4.],
+        [1.,  2., 0.,  -2., -1.]
+    ])
     
-        >>> tracker = Tracker(["test1", "test2"])
-        >>> tracker.add([1.3, 2.4])
-        >>> tracker.add([0.7, 0.6])
-        >>> tracker.print_average(0)
-        0: test1 1.0, test2 1.5
-        
-        >>> tracker.add([2.0, 3.0])
-        >>> tracker.print_average(1)
-        1: test1 2.0, test2 3.0
-    '''
+    smooth = tf.constant([
+        [2., 1., 0., -1., -2.],
+        [2., 1., 0., -1., -2.],
+        [2., 1., 0., -1., -2.],
+        [2., 1., 0., -1., -2.],
+        [2., 1., 0., -1., -2.]
+        ])
     
-    def __init__(self, var_names):
-        ''' Initialize tracker
-        
-        :param var_names: list of variable names to print with averages
-        '''
-        
-        self.var_names = var_names
-        self.num_var = len(var_names)
-        self.numerator = [0.]*len(var_names)
-        self.denominator = 0
+    flat = tf.ones([FLAGS.filter_size, FLAGS.filter_size, num_in, num_out])
+    smooth_x = tf.tile(tf.expand_dims(tf.expand_dims(smooth, 2), 3), [1, 1, num_in, num_out])
+    smooth_y = tf.transpose(smooth_x, [1, 0, 2, 3])
+    sobel_x = tf.tile(tf.expand_dims(tf.expand_dims(sobel, 2), 3), [1, 1, num_in, num_out])
+    sobel_y = tf.transpose(sobel_x, [1, 0, 2, 3])
     
-    def reset(self):
-        self.numerator = [0.]*self.num_var
-        self.denominator = 0
+    amount_flat =  flat * tf.reduce_sum(flat * weights, axis=[0, 1], keep_dims=True) / tf.reduce_sum(flat * flat, axis=[0, 1], keep_dims=True)
+    amount_x = smooth_x * tf.reduce_sum(sobel_x * weights, axis=[0, 1], keep_dims=True) / tf.reduce_sum(sobel_x * smooth_x, axis=[0, 1], keep_dims=True)
+    amount_y = smooth_y * tf.reduce_sum(sobel_y * weights, axis=[0, 1], keep_dims=True) / tf.reduce_sum(sobel_y * smooth_y, axis=[0, 1], keep_dims=True)
     
-    def print_average(self, step, reset=True):
-        ''' Prints the averages of the variables being tracked.
-        
-        :param step: Step number in the process to be printed with averages
-        :param reset: By default clears numerator and denominator values, set to False to keep values
-        '''
-        
-        assert self.denominator, "Error: division by zero"
-        
-        string = str(step) + ": "
-        for name, num in zip(self.var_names, self.numerator):
-            string += name + " " + str(num/float(self.denominator)) + (", " if name != self.var_names[-1] else "")
-        
-        if reset:
-            self.reset()
-        print string
+    if grad:
+        return weights.assign(weights - amount_flat - amount_x - amount_y)
+    return weights.assign(weights - amount_flat)
     
-    def add(self, vars):
-        ''' Append values to the moving average
+
+def smoothing(images, n):
+    pooling_size = 2*n + 1
+    gauss = tf.reshape(
+        tf.constant(h.gauss_filter(n)),
+        [pooling_size, pooling_size, 1, 1]
+    )
+    
+    unpack = tf.unstack(images, axis=3)
+    smooth_image = tf.stack([
+        tf.squeeze(h.conv2d(
+            tf.expand_dims(image, 3),
+            gauss, padding='SAME'
+        ), axis=[3])
+        for image in unpack], axis=3)
+    return smooth_image
+
+def flatten_image(images):
+    
+    sobel = tf.constant([
+        [1.,  2., 0.,  -2., -1.],
+        [4.,  8., 0.,  -8., -4.],
+        [6., 12., 0., -12., -6.],
+        [4.,  8., 0.,  -8., -4.],
+        [1.,  2., 0.,  -2., -1.]
+    ])
+    
+    smooth = tf.constant([
+        [2., 1., 0., -1., -2.],
+        [2., 1., 0., -1., -2.],
+        [2., 1., 0., -1., -2.],
+        [2., 1., 0., -1., -2.],
+        [2., 1., 0., -1., -2.]
+        ])
+    
+    flat = tf.ones([FLAGS.filter_size, FLAGS.filter_size, 1, 1])
+    smooth_x = tf.reshape(smooth, [FLAGS.filter_size, FLAGS.filter_size, 1, 1])
+    smooth_y = tf.transpose(smooth_x, [1, 0, 2, 3])
+    sobel_x = tf.reshape(sobel, [FLAGS.filter_size, FLAGS.filter_size, 1, 1])
+    sobel_y = tf.transpose(sobel_x, [1, 0, 2, 3])
         
-        :param vars: List of values corresponding to each variable name in self.var_names
-        '''
+    amount_flat = h.conv2d(images, flat, padding='SAME') / tf.reduce_sum(flat * flat)
+    remove_flat = h.conv2d(amount_flat, flat) / FLAGS.filter_size**2
+    
+    amount_x = h.conv2d(images, sobel_x, padding='SAME') / tf.reduce_sum(sobel_x * smooth_x)
+    remove_x = - h.conv2d(amount_x, smooth_x) / FLAGS.filter_size**2
+    
+    amount_y = h.conv2d(images, sobel_y, padding='SAME') / tf.reduce_sum(sobel_y * smooth_y)
+    remove_y = - h.conv2d(amount_y, smooth_y) / FLAGS.filter_size**2
+    
+    return images[:, 2:-2, 2:-2, :] - remove_flat - remove_x - remove_y, images[:, 2:-2, 2:-2, :] - remove_flat, images[:, 2:-2, 2:-2, :] - remove_flat - remove_x
+
+def laplace(images):
+    pooling_size = 5
+    gauss = tf.reshape(
+        tf.constant([
+            [-1., -1., -1., -1., -1.],
+            [-1., -1., -1., -1., -1.],
+            [-1., -1., 24., -1., -1.],
+            [-1., -1., -1., -1., -1.],
+            [-1., -1., -1., -1., -1.]
+        ]),
+        [pooling_size, pooling_size, 1, 1]
+    )
+    
+    unpack = tf.unstack(images, axis=3)
+    processed_image1 = tf.stack([
+        tf.squeeze(h.conv2d(
+            tf.expand_dims(image, 3),
+            gauss, padding='SAME'
+        ), axis=[3])
+        for image in unpack], axis=3)
+    return tf.abs(processed_image1)[:, 2:-2, 2:-2, :]# - tf.reduce_mean(processed_image2, axis=[1, 2, 3], keep_dims=True))
+    
+
+def convolution(images, summary=None):
+    image_board = tf.transpose(images[:FLAGS.num_tensorboard], [0, 3, 1, 2])
+    images, imgc, imgcx = flatten_image(images)
+    
+    flat_board = tf.transpose(images[:FLAGS.num_tensorboard], [0, 3, 1, 2])
+    const_board = tf.transpose(imgc[:FLAGS.num_tensorboard], [0, 3, 1, 2])
+    constx_board = tf.transpose(imgcx[:FLAGS.num_tensorboard], [0, 3, 1, 2])
+    
+    with tf.variable_scope('vars', reuse=summary):
+        #Initial filters include straight edges and straight lines of different angles
+        conv1_filters, conv2_filters, num_filters = h.get_initial_filters(FLAGS.num_angles)
         
-        for var, index in zip(vars, range(100)):
-            self.numerator[index] += float(var)
-        self.denominator += 1
+        #First convolution layer, searches for physical edge in image
+        convolution_weights_1 = tf.get_variable(
+            "conv1_weights",
+            initializer=tf.transpose(
+                tf.reshape(
+                    tf.constant(conv1_filters),
+                    [num_filters, FLAGS.filter_size, FLAGS.filter_size, 1]
+                ),
+                [1, 2, 3, 0]
+            )
+        )
+        
+        # Second convolution layer using same filters as first layer (no new variables)
+        reduced_weights = tf.transpose(
+                tf.reshape(
+                    tf.constant(conv2_filters),
+                    [num_filters, FLAGS.filter_size, FLAGS.filter_size, 1]
+                ),
+                [1, 2, 3, 0]
+            )
+        unpack = tf.unstack(reduced_weights, axis=3)
+        padding = [
+            tf.pad(
+                filter,
+                [[0, 0], [0, 0], [filter_num, num_filters - (filter_num + 1)]]
+            )
+            for filter, filter_num in zip(unpack, range(num_filters))
+        ]
+        convolution_weights_2 = tf.get_variable(
+            "conv2_weights",
+            initializer=tf.stack(padding, axis=2)
+        )
+        
+        renormalization1 = normalize_filters(convolution_weights_1, 1, num_filters)
+        renormalization2 = normalize_filters(convolution_weights_2, num_filters, num_filters, grad=False)
+        with tf.control_dependencies([renormalization1, renormalization2]):
+            h_conv1 = tf.nn.relu(h.conv2d(images, convolution_weights_1))
+            h_pool1 = tf.nn.avg_pool(smoothing(h_conv1, 1), ksize=[1, 3, 3, 1], strides=[1, 3, 3, 1], padding='VALID')
+            conv1_board = tf.transpose(h_pool1[:FLAGS.num_tensorboard], [0, 3, 1, 2])
+            
+            h_conv2 = tf.nn.relu(h.conv2d(h_pool1, convolution_weights_2))
+            h_pool2 = tf.nn.avg_pool(
+                tf.reduce_mean(h_conv2,
+                    axis=3,
+                    keep_dims=True
+                ),
+                ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID'
+            )
+            conv2_board = tf.transpose(h_conv2[:FLAGS.num_tensorboard], [0, 3, 1, 2])
+            pool_board = tf.transpose(h_pool2[:FLAGS.num_tensorboard], [0, 3, 1, 2])
+            
+            if summary is not None:
+                return image_board, flat_board, const_board, constx_board, conv1_board, conv2_board, pool_board
+        
+        return h_pool2
 
 def network(images):
     ''' Inference Mask that contains the bulk of the CNN network definitions.
@@ -75,48 +196,13 @@ def network(images):
     :return: Network output of the images
     '''
     
-    with tf.variable_scope('vars'):
-        #Initialize all the Variables in this network
-        
-        #Initial filters include straight/smooth edges of different angles and a few arbitrary shapes
-        initial_filters, num_filters = h.get_initial_filters(FLAGS.num_angles)
-        
-        #First convolution layer, searches for physical edge in image
-        convolution_weights_1 = tf.Variable(
-            tf.transpose(
-                tf.reshape(
-                    tf.constant(initial_filters),
-                    [num_filters, FLAGS.filter_size, FLAGS.filter_size, 1]
-                ),
-                [1, 2, 3, 0]
-            )
-        )
-        
-        h_conv1 = h.conv2d(images, convolution_weights_1)
-        h_pool1 = tf.nn.avg_pool(h_conv1, ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID')
-        
-        # Second convolution layer using same filters as first layer (no new variables)
-        unpack = tf.unpack(convolution_weights_1, axis=3)
-        padding = [
-            tf.pad(
-                filter,
-                [[0, 0], [0, 0], [filter_num, num_filters - (filter_num + 1)]])
-            for filter, filter_num in zip(unpack, range(num_filters))
-        ]
-        convolution_weights_2 = tf.pack(padding, axis=2)
-        
-        h_conv2 = h.conv2d(h_pool1, convolution_weights_2)
-        h_pool2 = tf.nn.avg_pool(h_conv2, ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID')
-        
-        # Compute scalar output
-        scalar = tf.reduce_sum(
-            tf.reduce_mean(
-                tf.abs(h_pool2),
-                reduction_indices=[2, 3]
-            ), 1
-        )
-        
-        return scalar
+    h_pool = convolution(images)
+    scalar = tf.reduce_mean(
+        h_pool,
+        axis=3
+    )
+    
+    return scalar
 
 def cost(scalar, labels):
     ''' Cost function to be minimized during network training. Expect a bimodal distribution so
@@ -128,29 +214,30 @@ def cost(scalar, labels):
     '''
     
     # Separate the scalars into individual distributions based on the corresponding labels
-    string_distribution = tf.boolean_mask(
-        scalar,
-        labels
+    string_regions = tf.cast(
+        tf.cast(labels, tf.bool),
+        tf.float32
     )
-    noise_distribution = tf.boolean_mask(
-        scalar,
-        tf.logical_not(tf.cast(labels, tf.bool))
+    noise_regions = tf.cast(
+        tf.logical_not(tf.cast(labels, tf.bool)),
+        tf.float32
     )
     
     # Compute the average and rms of distributions
-    string_avg = tf.reduce_mean(string_distribution)
-    string_rms = tf.sqrt(tf.reduce_mean(tf.square(
-        string_distribution - string_avg
-    )))
+    string_avg = tf.reduce_sum(scalar * string_regions)/tf.reduce_sum(string_regions)
+    string_rms = tf.sqrt(
+        tf.reduce_sum(tf.square(scalar - string_avg) * string_regions) / tf.reduce_sum(string_regions)
+    )
     
-    noise_avg = tf.reduce_mean(noise_distribution)
-    noise_rms = tf.sqrt(tf.reduce_mean(tf.square(
-        noise_distribution - noise_avg
-    )))
+    noise_avg = tf.reduce_sum(scalar * noise_regions)/tf.reduce_sum(noise_regions)
+    noise_rms = tf.sqrt(
+        tf.reduce_sum(tf.square(scalar - noise_avg) * noise_regions) / tf.reduce_sum(noise_regions)
+    )
     
-    separation = tf.abs(string_avg - noise_avg)
+    separation = string_avg - noise_avg
+    rms = (noise_rms + string_rms)/2
     
-    return tf.add(tf.divide(string_rms, separation), tf.divide(noise_rms, separation))
+    return - separation / rms
 
 def train(cost, saver, global_step):
     ''' Group elements together into an object that will perform training steps when called with sess.run(...)
@@ -178,8 +265,8 @@ def prediction(scalar):
     # Converts the Network output tensor from network() to a prediction in 1hot format
     average = tf.reduce_mean(scalar, keep_dims=True)
     
-    compare = tf.pack(
-        [tf.tile(average, [FLAGS.get_batch_size()]), scalar],
+    compare = tf.stack(
+        [tf.tile(average, [FLAGS.get_batch_size(), FLAGS.num_regions, FLAGS.num_regions]), scalar],
         axis = 1
     )
     
@@ -193,7 +280,7 @@ def correct(prediction, label):
     :return: Tensor of type tf.bool with True if the correct classification was made and False otherwise
     '''
     
-    return tf.equal(prediction, label)
+    return tf.equal(prediction, tf.cast(label, tf.bool))
 
 def accuracy(correct):
     ''' Calculate the accuracy of the Network in a sample batch

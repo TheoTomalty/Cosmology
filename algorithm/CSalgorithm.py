@@ -5,6 +5,7 @@ import sys
 import getopt
 import CSheader as h
 import CSinput
+from Tracker import Tracker
 import CSgraph
 import math
 import json
@@ -20,11 +21,11 @@ help_message = 'CSalgorithm.py -p <parameter_file> --test' \
 try:
     opts, args = getopt.getopt(sys.argv[1:],"hp:i:o:n:",["continue", "tensorboard", "test"])
 except getopt.GetoptError:
-    print help_message
+    print(help_message)
     sys.exit(2)
 for opt, arg in opts:
     if opt == '-h':
-        print help_message
+        print(help_message)
         sys.exit()
     elif opt == "-p":
         #Attempt to read a parameter file, defaults used if not found.
@@ -34,19 +35,19 @@ for opt, arg in opts:
         try:
             FLAGS.set_parameters(CSinput.ParameterReadWrite(arg).read())
         except:
-            print "Parameter file not found, using defaults for run."
+            print("Parameter file not found, using defaults for run.")
             pass
     elif opt == "-i":
         #Input directory that contains numbered image files, ex: "images1.txt"
         if not os.path.exists(arg):
-            print "Input Directory not found."
+            print("Input Directory not found.")
             sys.exit()
         else:
             FLAGS.image_directory = arg
     elif opt == "-o":
         #Run directory where network parameters and statistics are saved
         if not os.path.exists(arg):
-            print "Output Directory not found."
+            print("Output Directory not found.")
             sys.exit()
         else:
             FLAGS.run_directory = arg
@@ -80,6 +81,8 @@ def process():
         
         #Get output of the CNN with images as input
         scalar = CSgraph.network(images)
+        print_image, print_flat, print_const, print_constx, print_conv1, print_conv2, print_pool = CSgraph.convolution(images, summary=True)
+        print_label = tf.expand_dims(labels[:FLAGS.num_tensorboard], axis=1)
         
         #Initialize saver object that takes care of reading and writing parameters to checkpoint files
         saver = CSinput.Saver()
@@ -92,7 +95,7 @@ def process():
         
         #Initialize all the Tensorflow Variables defined in appropriate networks, as well as the Tensorflow session object
         initialize = tf.global_variables_initializer()
-        sess = tf.InteractiveSession()
+        sess = tf.InteractiveSession(config=tf.ConfigProto(log_device_placement=True))
         sess.run(initialize)
         
         #Actually Begin Processing the Graph
@@ -109,34 +112,56 @@ def process():
         
         if FLAGS.training:
             # Training protocol
-            tracker = CSgraph.Tracker(["Cost", "Accuracy"])
+            tracker = Tracker(["Cost", "Accuracy"])
             
             # Iterate over the desired number of batches
             for batch_num in range(1, FLAGS.num_iterations + 1):
                 #Run the training step once and return real-number values for cost and accuracy
-                _, cost_value, acc_value, scalar_val = sess.run([train_op, cost, accuracy, scalar])
+                _, cost_value, acc_value, real_image, real_flat, real_const, real_constx, real_label, real_conv1, real_conv2, real_pool = sess.run([
+                    train_op, 
+                    cost, 
+                    accuracy, 
+                    print_image,
+                    print_flat,
+                    print_const,
+                    print_constx,
+                    print_label,
+                    print_conv1, 
+                    print_conv2,
+                    print_pool
+                ])
+                #print np.transpose(variable_val, [3, 0, 1, 2])[0]
                 
                 assert not math.isnan(cost_value), 'Model diverged with cost = NaN'
                 tracker.add([cost_value, acc_value])
                 
                 #Periodically print cost and accuracy values to monitor training process
-                if not batch_num % 2:
+                if not batch_num % 1:
                     tracker.print_average(batch_num)
                 
                 #Periodically save moving averages to checkpoint files
-                if not batch_num % 20 or batch_num == FLAGS.num_iterations:
+                if not batch_num % 50 or batch_num == FLAGS.num_iterations:
+                    if FLAGS.print_tensorboard:
+                        CSinput.print_tensorboard(
+                            sess,
+                            [real_image, real_flat, real_const, real_constx, real_label, real_conv1, real_conv2, real_pool],
+                            ["image", "flat", "const", "constx", "label", "conv1", "conv2", "pool"]
+                        )
                     saver.save(sess)
         else:
             #Testing Protocol
-            tracker = CSgraph.Tracker(["Accuracy"])
+            tracker1 = Tracker(["scalar", "labels"])
+            tracker2 = Tracker(["Cost", "Accuracy"])
+            cost_value, acc_value =  sess.run([cost, accuracy])
             
-            for file_num in range(1, FLAGS.num_iterations + 1):
-                #Evaluate the relevant information for testing (algorithm output, correct classification, and algorithm accuracy)
-                acc_value = sess.run(accuracy)
+            for file_num in range(1, FLAGS.num_files + 1):
+                #Track and print accuracy for monitoring purposes
+                cost_value, acc_value, scal_value, label_value = sess.run([cost, accuracy, scalar, labels])
+                tracker1.save_output(file_num, FLAGS.image_directory, scal_value, label_value)
+                tracker2.add([cost_value, acc_value])
                 
-                #Cumulatively track and print accuracy for monitoring purposes
-                tracker.add([acc_value])
-                tracker.print_average("Testing",reset=False)
+                tracker2.print_average(file_num)
+                
         
         #Wrap up
         coord.request_stop()
