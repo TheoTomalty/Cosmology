@@ -48,13 +48,13 @@ class Tracker(object):
         
         if reset:
             self.reset()
-        print string
+        print(string)
     
     def save_output(self, step, directory, *args):
         info_path = os.path.join(directory, "info" + str(step) + ".txt")
         test_path = os.path.join(directory, "final" + str(step) + ".txt")
         assert len(args) == len(self.var_names)
-        print step
+        print(step)
         
         with open(info_path, 'r') as file:
             with open(test_path, 'w') as test_file:

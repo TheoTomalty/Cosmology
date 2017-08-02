@@ -88,7 +88,7 @@ class ParameterReadWrite(object):
             for line in f:
                 # Return the JSON-parsed line (removing the newline character if necessary)
                 if line[-1] == "\n":
-                    print "Warning: may be multiple dictionaries in \"" + self.parameter_file + "\", whereas only the first is loaded."
+                    print("Warning: may be multiple dictionaries in \"" + self.parameter_file + "\", whereas only the first is loaded.")
                     return json.loads(line[:-1])
                 return json.loads(line)
     
@@ -118,10 +118,10 @@ def read_file(filename_queue):
     data_row = tf.decode_csv(line, record_defaults=data_defaults)
     
     # Pack pixels tensors together as a single image (and normalize the values)
-    datum = tf.pack(data_row[:FLAGS.data_size])
+    datum = tf.stack(data_row[:FLAGS.data_size])
     
     # Pack last two tensors into particle identification (1hot)
-    label = tf.pack(data_row[FLAGS.data_size:])
+    label = tf.stack(data_row[FLAGS.data_size:])
     
     #Return the distinct tensors associated with a single-line read of a file
     return datum, label
@@ -214,7 +214,7 @@ def write(session, summaries):
         if f.startswith("events.out.tfevents."):
             remove(os.path.join(logdir, f))
         else:
-            print "Unexpected file in logdir: " + f
+            print("Unexpected file in logdir: " + f)
     # Write summary object
     writer = tf.summary.FileWriter(logdir, session.graph)
     for summary in summaries:

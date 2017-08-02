@@ -21,11 +21,11 @@ help_message = 'CSalgorithm.py -p <parameter_file> --test' \
 try:
     opts, args = getopt.getopt(sys.argv[1:],"hp:i:o:n:",["continue", "tensorboard", "test"])
 except getopt.GetoptError:
-    print help_message
+    print(help_message)
     sys.exit(2)
 for opt, arg in opts:
     if opt == '-h':
-        print help_message
+        print(help_message)
         sys.exit()
     elif opt == "-p":
         #Attempt to read a parameter file, defaults used if not found.
@@ -35,19 +35,19 @@ for opt, arg in opts:
         try:
             FLAGS.set_parameters(CSinput.ParameterReadWrite(arg).read())
         except:
-            print "Parameter file not found, using defaults for run."
+            print("Parameter file not found, using defaults for run.")
             pass
     elif opt == "-i":
         #Input directory that contains numbered image files, ex: "images1.txt"
         if not os.path.exists(arg):
-            print "Input Directory not found."
+            print("Input Directory not found.")
             sys.exit()
         else:
             FLAGS.image_directory = arg
     elif opt == "-o":
         #Run directory where network parameters and statistics are saved
         if not os.path.exists(arg):
-            print "Output Directory not found."
+            print("Output Directory not found.")
             sys.exit()
         else:
             FLAGS.run_directory = arg
@@ -95,7 +95,7 @@ def process():
         
         #Initialize all the Tensorflow Variables defined in appropriate networks, as well as the Tensorflow session object
         initialize = tf.global_variables_initializer()
-        sess = tf.InteractiveSession()
+        sess = tf.InteractiveSession(config=tf.ConfigProto(log_device_placement=True))
         sess.run(initialize)
         
         #Actually Begin Processing the Graph

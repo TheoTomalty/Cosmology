@@ -29,7 +29,7 @@ class GlobalFlags:
         # Fixed Parameters
         self.num_pixels = 95 # Width of square input images to network, in number of pixels. Image is num_pixels x num_pixels in total.
         self.num_regions = 5
-        self.min_after_dequeue = 200 # Quantity used for shuffling batches. Higher = better randomization but slower processing speed.
+        self.min_after_dequeue = 1000 # Quantity used for shuffling batches. Higher = better randomization but slower processing speed.
         self.filter_size = 5 # Pixel width of filters used for feature identification. To change this you will need to also modify 
                              # the size of the default filters in get_initial_filters. Preferably an odd number.
         self.images_per_file = 200 

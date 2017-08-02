@@ -51,7 +51,7 @@ def smoothing(images, n):
         [pooling_size, pooling_size, 1, 1]
     )
     
-    unpack = tf.unpack(images, axis=3)
+    unpack = tf.unstack(images, axis=3)
     smooth_image = tf.stack([
         tf.squeeze(h.conv2d(
             tf.expand_dims(image, 3),
@@ -61,6 +61,7 @@ def smoothing(images, n):
     return smooth_image
 
 def flatten_image(images):
+    
     sobel = tf.constant([
         [1.,  2., 0.,  -2., -1.],
         [4.,  8., 0.,  -8., -4.],
@@ -82,7 +83,7 @@ def flatten_image(images):
     smooth_y = tf.transpose(smooth_x, [1, 0, 2, 3])
     sobel_x = tf.reshape(sobel, [FLAGS.filter_size, FLAGS.filter_size, 1, 1])
     sobel_y = tf.transpose(sobel_x, [1, 0, 2, 3])
-    
+        
     amount_flat = h.conv2d(images, flat, padding='SAME') / tf.reduce_sum(flat * flat)
     remove_flat = h.conv2d(amount_flat, flat) / FLAGS.filter_size**2
     
@@ -107,7 +108,7 @@ def laplace(images):
         [pooling_size, pooling_size, 1, 1]
     )
     
-    unpack = tf.unpack(images, axis=3)
+    unpack = tf.unstack(images, axis=3)
     processed_image1 = tf.stack([
         tf.squeeze(h.conv2d(
             tf.expand_dims(image, 3),
@@ -149,7 +150,7 @@ def convolution(images, summary=None):
                 ),
                 [1, 2, 3, 0]
             )
-        unpack = tf.unpack(reduced_weights, axis=3)
+        unpack = tf.unstack(reduced_weights, axis=3)
         padding = [
             tf.pad(
                 filter,
@@ -159,7 +160,7 @@ def convolution(images, summary=None):
         ]
         convolution_weights_2 = tf.get_variable(
             "conv2_weights",
-            initializer=tf.pack(padding, axis=2)
+            initializer=tf.stack(padding, axis=2)
         )
         
         renormalization1 = normalize_filters(convolution_weights_1, 1, num_filters)
@@ -264,7 +265,7 @@ def prediction(scalar):
     # Converts the Network output tensor from network() to a prediction in 1hot format
     average = tf.reduce_mean(scalar, keep_dims=True)
     
-    compare = tf.pack(
+    compare = tf.stack(
         [tf.tile(average, [FLAGS.get_batch_size(), FLAGS.num_regions, FLAGS.num_regions]), scalar],
         axis = 1
     )
