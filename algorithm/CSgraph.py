@@ -5,12 +5,12 @@ import json
 
 FLAGS = h.FLAGS
 
-def set_zero_edges(conv, size, remove):
-    bulk = tf.ones([FLAGS.get_batch_size(), size - 2*remove, size - 2*remove, FLAGS.num_angles])
-    
-    cut = tf.pad(bulk, [[0, 0], [remove, remove], [remove, remove], [0, 0]])
-    
-    return conv * cut
+#def set_zero_edges(conv, size, remove):
+#    bulk = tf.ones([FLAGS.get_batch_size(), size - 2*remove, size - 2*remove, FLAGS.num_angles])
+#    
+#    cut = tf.pad(bulk, [[0, 0], [remove, remove], [remove, remove], [0, 0]])
+#    
+#    return conv * cut
 
 def normalize_filters(weights, num_in, num_out, grad=False):
     sobel = tf.constant([
@@ -95,27 +95,27 @@ def flatten_image(images):
     
     return images[:, 2:-2, 2:-2, :] - remove_flat - remove_x - remove_y, images[:, 2:-2, 2:-2, :] - remove_flat, images[:, 2:-2, 2:-2, :] - remove_flat - remove_x
 
-def laplace(images):
-    pooling_size = 5
-    gauss = tf.reshape(
-        tf.constant([
-            [-1., -1., -1., -1., -1.],
-            [-1., -1., -1., -1., -1.],
-            [-1., -1., 24., -1., -1.],
-            [-1., -1., -1., -1., -1.],
-            [-1., -1., -1., -1., -1.]
-        ]),
-        [pooling_size, pooling_size, 1, 1]
-    )
-    
-    unpack = tf.unstack(images, axis=3)
-    processed_image1 = tf.stack([
-        tf.squeeze(h.conv2d(
-            tf.expand_dims(image, 3),
-            gauss, padding='SAME'
-        ), axis=[3])
-        for image in unpack], axis=3)
-    return tf.abs(processed_image1)[:, 2:-2, 2:-2, :]# - tf.reduce_mean(processed_image2, axis=[1, 2, 3], keep_dims=True))
+#def laplace(images):
+#    pooling_size = 5
+#    gauss = tf.reshape(
+#        tf.constant([
+#            [-1., -1., -1., -1., -1.],
+#            [-1., -1., -1., -1., -1.],
+#            [-1., -1., 24., -1., -1.],
+#            [-1., -1., -1., -1., -1.],
+#            [-1., -1., -1., -1., -1.]
+#        ]),
+#        [pooling_size, pooling_size, 1, 1]
+#    )
+#    
+#    unpack = tf.unstack(images, axis=3)
+#    processed_image1 = tf.stack([
+#        tf.squeeze(h.conv2d(
+#            tf.expand_dims(image, 3),
+#            gauss, padding='SAME'
+#        ), axis=[3])
+#        for image in unpack], axis=3)
+#    return tf.abs(processed_image1)[:, 2:-2, 2:-2, :]# - tf.reduce_mean(processed_image2, axis=[1, 2, 3], keep_dims=True))
     
 
 def convolution(images, summary=None):
