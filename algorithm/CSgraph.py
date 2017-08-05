@@ -1,16 +1,8 @@
 import tensorflow as tf
 import CSheader as h
-import os
-import json
+import numpy as np
 
 FLAGS = h.FLAGS
-
-#def set_zero_edges(conv, size, remove):
-#    bulk = tf.ones([FLAGS.get_batch_size(), size - 2*remove, size - 2*remove, FLAGS.num_angles])
-#    
-#    cut = tf.pad(bulk, [[0, 0], [remove, remove], [remove, remove], [0, 0]])
-#    
-#    return conv * cut
 
 def normalize_filters(weights, num_in, num_out, grad=False):
     sobel = tf.constant([
@@ -60,72 +52,7 @@ def smoothing(images, n):
         for image in unpack], axis=3)
     return smooth_image
 
-def flatten_image(images):
-    
-    sobel = tf.constant([
-        [1.,  2., 0.,  -2., -1.],
-        [4.,  8., 0.,  -8., -4.],
-        [6., 12., 0., -12., -6.],
-        [4.,  8., 0.,  -8., -4.],
-        [1.,  2., 0.,  -2., -1.]
-    ])
-    
-    smooth = tf.constant([
-        [2., 1., 0., -1., -2.],
-        [2., 1., 0., -1., -2.],
-        [2., 1., 0., -1., -2.],
-        [2., 1., 0., -1., -2.],
-        [2., 1., 0., -1., -2.]
-        ])
-    
-    flat = tf.ones([FLAGS.filter_size, FLAGS.filter_size, 1, 1])
-    smooth_x = tf.reshape(smooth, [FLAGS.filter_size, FLAGS.filter_size, 1, 1])
-    smooth_y = tf.transpose(smooth_x, [1, 0, 2, 3])
-    sobel_x = tf.reshape(sobel, [FLAGS.filter_size, FLAGS.filter_size, 1, 1])
-    sobel_y = tf.transpose(sobel_x, [1, 0, 2, 3])
-        
-    amount_flat = h.conv2d(images, flat, padding='SAME') / tf.reduce_sum(flat * flat)
-    remove_flat = h.conv2d(amount_flat, flat) / FLAGS.filter_size**2
-    
-    amount_x = h.conv2d(images, sobel_x, padding='SAME') / tf.reduce_sum(sobel_x * smooth_x)
-    remove_x = - h.conv2d(amount_x, smooth_x) / FLAGS.filter_size**2
-    
-    amount_y = h.conv2d(images, sobel_y, padding='SAME') / tf.reduce_sum(sobel_y * smooth_y)
-    remove_y = - h.conv2d(amount_y, smooth_y) / FLAGS.filter_size**2
-    
-    return images[:, 2:-2, 2:-2, :] - remove_flat - remove_x - remove_y, images[:, 2:-2, 2:-2, :] - remove_flat, images[:, 2:-2, 2:-2, :] - remove_flat - remove_x
-
-#def laplace(images):
-#    pooling_size = 5
-#    gauss = tf.reshape(
-#        tf.constant([
-#            [-1., -1., -1., -1., -1.],
-#            [-1., -1., -1., -1., -1.],
-#            [-1., -1., 24., -1., -1.],
-#            [-1., -1., -1., -1., -1.],
-#            [-1., -1., -1., -1., -1.]
-#        ]),
-#        [pooling_size, pooling_size, 1, 1]
-#    )
-#    
-#    unpack = tf.unstack(images, axis=3)
-#    processed_image1 = tf.stack([
-#        tf.squeeze(h.conv2d(
-#            tf.expand_dims(image, 3),
-#            gauss, padding='SAME'
-#        ), axis=[3])
-#        for image in unpack], axis=3)
-#    return tf.abs(processed_image1)[:, 2:-2, 2:-2, :]# - tf.reduce_mean(processed_image2, axis=[1, 2, 3], keep_dims=True))
-    
-
 def convolution(images, summary=None):
-    image_board = tf.transpose(images[:FLAGS.num_tensorboard], [0, 3, 1, 2])
-    images, imgc, imgcx = flatten_image(images)
-    
-    flat_board = tf.transpose(images[:FLAGS.num_tensorboard], [0, 3, 1, 2])
-    const_board = tf.transpose(imgc[:FLAGS.num_tensorboard], [0, 3, 1, 2])
-    constx_board = tf.transpose(imgcx[:FLAGS.num_tensorboard], [0, 3, 1, 2])
-    
     with tf.variable_scope('vars', reuse=summary):
         #Initial filters include straight edges and straight lines of different angles
         conv1_filters, conv2_filters, num_filters = h.get_initial_filters(FLAGS.num_angles)
@@ -168,7 +95,6 @@ def convolution(images, summary=None):
         with tf.control_dependencies([renormalization1, renormalization2]):
             h_conv1 = tf.nn.relu(h.conv2d(images, convolution_weights_1))
             h_pool1 = tf.nn.avg_pool(smoothing(h_conv1, 1), ksize=[1, 3, 3, 1], strides=[1, 3, 3, 1], padding='VALID')
-            conv1_board = tf.transpose(h_pool1[:FLAGS.num_tensorboard], [0, 3, 1, 2])
             
             h_conv2 = tf.nn.relu(h.conv2d(h_pool1, convolution_weights_2))
             h_pool2 = tf.nn.avg_pool(
@@ -178,11 +104,6 @@ def convolution(images, summary=None):
                 ),
                 ksize=[1, 5, 5, 1], strides=[1, 5, 5, 1], padding='VALID'
             )
-            conv2_board = tf.transpose(h_conv2[:FLAGS.num_tensorboard], [0, 3, 1, 2])
-            pool_board = tf.transpose(h_pool2[:FLAGS.num_tensorboard], [0, 3, 1, 2])
-            
-            if summary is not None:
-                return image_board, flat_board, const_board, constx_board, conv1_board, conv2_board, pool_board
         
         return h_pool2
 
@@ -291,3 +212,14 @@ def accuracy(correct):
         
     return tf.reduce_mean(tf.cast(correct, tf.float32))
 
+def train_output(ix, images, labels, saver, global_step):
+    #Get output of the CNN with images as input
+    CSscalar = network(images[ix*FLAGS.batch_size:(ix+1)*FLAGS.batch_size])
+        
+    #Values and Operations to evaluate in each batch
+    CScost = cost(CSscalar, labels[ix*FLAGS.batch_size:(ix+1)*FLAGS.batch_size])
+    CScorrect = correct(prediction(CSscalar), labels[ix*FLAGS.batch_size:(ix+1)*FLAGS.batch_size])
+    CSaccuracy = accuracy(CScorrect)
+    train_op = train(CScost, saver, global_step)
+    
+    return train_op, CScost, CSaccuracy

@@ -1,6 +1,6 @@
 import numpy as np
 import h5py
-from ..DirectoryEmbedded import get_files, DirectoryEmbedded
+from DirectoryEmbedded import get_files, DirectoryEmbedded
 
 label_size = 5
 image_size = 95
